@@ -1,50 +1,59 @@
-# Welcome to your Expo app 👋
+# Robot Arm Control (Expo)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+An Expo-managed app for driving a 6-axis robotic arm over WebSocket. It lets you send absolute angles per joint, set safe ranges and home positions, view live payloads, and optionally use phone gyros for two virtual axes—all without ejecting.
 
-## Get started
-
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Quick start
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+- Run in **Expo Go** on device, or in iOS/Android simulators.
+- Enter your WebSocket URL in Settings (e.g., `ws://192.168.4.1:81`).
 
-## Learn more
+## Features
 
-To learn more about developing your project with Expo, look at the following resources:
+- **Joint sliders:** Base, Arm A, Arm B, Wrist A, Wrist B, Gripper; re-order tiles; inline angle badge.
+- **Safety gates:** Per-joint min/max/home values; outgoing payloads are clamped before sending.
+- **Homing:** One-tap home to your configured angles.
+- **Gyro control (opt-in):** Use pitch/roll as two virtual sliders; calibrate to the current pose; tunable sensitivity.
+- **Debug:** Always-visible JSON payload of what’s being sent.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Example payload & rate
 
-## Join the community
+```json
+{
+  "base": 90,
+  "armA": 105.5,
+  "armB": 40.0,
+  "wristA": 92.5,
+  "wristB": 88.0,
+  "gripper": 120.0,
+  "timestamp": 1736382000123
+}
+```
 
-Join our community of developers creating universal apps.
+- Angles are absolute and clamped to your configured ranges before sending.
+- Payloads are throttled to ~50 ms (about 20 Hz) to avoid spamming the ESP32.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Persistence
+
+- State (settings, joint limits, tile order) is saved to `FileSystem.documentDirectory/robot-controller.json` using `expo-file-system`.
+- In Expo Go, it survives reloads and swiping away the app, but will reset if Expo Go’s data is cleared or the Expo Go app is updated/reinstalled.
+
+## Storage flush behavior
+
+- Saves are debounced while you edit.
+- Pending changes flush when the app backgrounds, to avoid losing edits if you immediately close Expo Go.
+
+## Project layout
+
+- `app/(tabs)/index.tsx` — Control screen UI.
+- `app/(tabs)/settings.tsx` — Connection, ranges, homes, gyro.
+- `hooks/use-robot-controller.tsx` — State, clamping, WebSocket, gyro, persistence.
+- `components/control-slider.tsx` — Custom gesture-driven slider.
+
+## Testing
+
+- `npm run lint`
