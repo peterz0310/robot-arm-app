@@ -1,98 +1,321 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { ControlSlider } from "@/components/control-slider";
+import { useRobotController } from "@/hooks/use-robot-controller";
 
-export default function HomeScreen() {
+const palette = {
+  background: "#050b10",
+  card: "#0f1b24",
+  elevated: "#112331",
+  accent: "#0dd3a5",
+  accent2: "#ff9f1c",
+  border: "#1a2e3b",
+  text: "#e9f1f7",
+  muted: "#7ea0b8",
+  danger: "#ff5c8a",
+};
+
+function ConnectionBadge({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    connected: palette.accent,
+    connecting: palette.accent2,
+    disconnected: palette.muted,
+    error: palette.danger,
+  };
+  const color = colors[status] ?? palette.muted;
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <View
+      style={[
+        styles.badge,
+        { backgroundColor: `${color}22`, borderColor: color },
+      ]}
+    >
+      <Text style={[styles.badgeText, { color }]}>{status.toUpperCase()}</Text>
+    </View>
+  );
+}
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+export default function ControlScreen() {
+  const {
+    controlTiles,
+    reorderTile,
+    jointAngles,
+    jointConfigs,
+    updateJoint,
+    homeAll,
+    connectionStatus,
+    settings,
+    updateSettings,
+    lastPayload,
+  } = useRobotController();
+
+  const insets = useSafeAreaInsets();
+
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: palette.background }}
+      contentContainerStyle={[
+        styles.container,
+        { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 24 },
+      ]}
+    >
+      <View style={styles.headerCard}>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.title}>Robot Arm Console</Text>
+            <Text style={styles.subtitle}>
+              Drive each joint with sliders or phone gyro.
+            </Text>
+          </View>
+          <ConnectionBadge status={connectionStatus} />
+        </View>
+        <View style={styles.headerRow}>
+          <Text style={styles.label}>WebSocket</Text>
+          <Text style={styles.value}>
+            {settings.wsAddress || "Set an IP in Settings"}
+          </Text>
+        </View>
+        <View style={styles.actionsRow}>
+          <Pressable
+            style={[styles.actionButton, { backgroundColor: palette.accent }]}
+            onPress={homeAll}
+          >
+            <Text style={[styles.actionText, { color: "#041015" }]}>
+              Home all joints
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.actionButton,
+              {
+                borderColor: palette.border,
+                borderWidth: 1,
+                backgroundColor: palette.elevated,
+              },
+            ]}
+            onPress={() => {
+              updateSettings({ gyroEnabled: !settings.gyroEnabled });
+            }}
+          >
+            <Text style={styles.actionText}>
+              {settings.gyroEnabled ? "Disable gyro" : "Enable gyro"}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {controlTiles.map((tile, index) => {
+        if (tile.type === "gyro") return null;
+
+        const config = jointConfigs[tile.joint];
+        const angle = jointAngles[tile.joint];
+
+        return (
+          <View key={tile.id} style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>{config.label}</Text>
+              <View style={styles.reorder}>
+                <Pressable
+                  onPress={() => reorderTile(tile.id, "up")}
+                  style={[
+                    styles.reorderButton,
+                    index === 0 && styles.reorderDisabled,
+                  ]}
+                >
+                  <Text style={styles.reorderText}>↑</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => reorderTile(tile.id, "down")}
+                  style={[
+                    styles.reorderButton,
+                    index === controlTiles.length - 1 && styles.reorderDisabled,
+                  ]}
+                >
+                  <Text style={styles.reorderText}>↓</Text>
+                </Pressable>
+              </View>
+            </View>
+            <View style={styles.sliderRow}>
+              <ControlSlider
+                value={angle}
+                min={config.min}
+                max={config.max}
+                accent={palette.accent}
+                onChange={(next) => updateJoint(tile.joint, next)}
+              />
+              <Text style={styles.angleBadge}>{angle.toFixed(1)}°</Text>
+            </View>
+          </View>
+        );
+      })}
+
+      <View style={[styles.card, { borderColor: palette.accent }]}>
+        <Text style={styles.cardTitle}>Debug payload</Text>
+        <Text style={[styles.debug, { color: palette.muted }]}>
+          {lastPayload || "Waiting…"}
+        </Text>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  container: {
+    padding: 16,
+    gap: 12,
+  },
+  headerCard: {
+    backgroundColor: palette.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    padding: 16,
+    gap: 10,
+  },
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
     gap: 8,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  title: {
+    color: palette.text,
+    fontSize: 24,
+    fontWeight: "700",
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  subtitle: {
+    color: palette.muted,
+    marginTop: 4,
+  },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  actionsRow: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  actionButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  actionText: {
+    color: palette.text,
+    fontWeight: "600",
+  },
+  card: {
+    backgroundColor: palette.card,
+    borderRadius: 16,
+    padding: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+    borderWidth: 1,
+    borderColor: palette.border,
+    gap: 10,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  cardTitle: {
+    color: palette.text,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  cardHint: {
+    color: palette.muted,
+  },
+  reorder: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  reorderButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.border,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.elevated,
+  },
+  reorderDisabled: {
+    opacity: 0.4,
+  },
+  reorderText: {
+    color: palette.text,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  infoRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  mappingRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  label: {
+    color: palette.muted,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  value: {
+    color: palette.text,
+    fontWeight: "700",
+  },
+  sliderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  angleBadge: {
+    color: palette.text,
+    backgroundColor: palette.elevated,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    fontWeight: "700",
+    minWidth: 72,
+    textAlign: "center",
+  },
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignSelf: "flex-start",
+    flexShrink: 1,
+  },
+  badgeText: {
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  debug: {
+    backgroundColor: "#0a141c",
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.border,
+    fontFamily: "monospace",
+    fontSize: 12,
+  },
+  hint: {
+    color: palette.muted,
   },
 });
