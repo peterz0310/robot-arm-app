@@ -17,6 +17,7 @@ npx expo start
 - **Joint sliders:** Base, Arm A, Arm B, Wrist A, Wrist B, Gripper; re-order tiles; inline angle badge.
 - **Safety gates:** Per-joint min/max/home values; outgoing payloads are clamped before sending.
 - **Homing:** One-tap home to your configured angles.
+- **Programs:** Create named programs, set one as “editing”, snapshot poses from Control, edit segment timings, and view the full JSON.
 - **Gyro control (opt-in):** Use pitch/roll as two virtual sliders; calibrate to the current pose; tunable sensitivity.
 - **Debug:** Always-visible JSON payload of what’s being sent.
 
@@ -40,6 +41,7 @@ npx expo start
 ## Persistence
 
 - State (settings, joint limits, tile order) is saved to `FileSystem.documentDirectory/robot-controller.json` using `expo-file-system`.
+- Programs live in `FileSystem.documentDirectory/programs/*.json` plus a `state.json` marker for the active editing program.
 - In Expo Go, it survives reloads and swiping away the app, but will reset if Expo Go’s data is cleared or the Expo Go app is updated/reinstalled.
 
 ## Storage flush behavior

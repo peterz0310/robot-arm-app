@@ -1,8 +1,8 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -25,14 +25,21 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Control',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="dial.max.fill" color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons size={size} name="speedometer-outline" color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="gearshape.fill" color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons size={size} name="settings-outline" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="programs"
+        options={{
+          title: 'Programs',
+          tabBarIcon: ({ color, size }) => <Ionicons size={size} name="list-outline" color={color} />,
         }}
       />
     </Tabs>

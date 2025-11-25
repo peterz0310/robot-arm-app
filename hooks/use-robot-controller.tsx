@@ -22,6 +22,12 @@ export type JointConfig = {
 
 export type JointAngles = Record<JointId, number>;
 
+export type ProgramRunPayload = {
+  id: string;
+  name: string;
+  waypoints: { t: number; joints: JointAngles }[];
+};
+
 type ControlTile = {
   id: string;
   label: string;
@@ -60,6 +66,8 @@ type RobotControllerContextValue = {
   lastPayload: string;
   gyroCalibration: GyroCalibration;
   calibrateGyro: () => void;
+  sendProgramRun: (program: ProgramRunPayload) => boolean;
+  goToPose: (pose: JointAngles) => void;
 };
 
 const JOINTS: JointId[] = ['base', 'armA', 'armB', 'wristA', 'wristB', 'gripper'];
@@ -170,6 +178,27 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
     [jointConfigs]
   );
 
+  const goToPose = useCallback(
+    (pose: JointAngles) => {
+      setJointAngles((current) => {
+        const next: JointAngles = { ...current };
+        JOINTS.forEach((joint) => {
+          const target = pose[joint];
+          const numeric = Number(target);
+          const config = jointConfigs[joint];
+          const clamped = clamp(
+            Number.isFinite(numeric) ? numeric : current[joint],
+            config.min,
+            config.max
+          );
+          next[joint] = Number(clamped.toFixed(1));
+        });
+        return next;
+      });
+    },
+    [jointConfigs]
+  );
+
   const reorderTile = useCallback((tileId: string, direction: 'up' | 'down') => {
     setControlTiles((tiles) => {
       const index = tiles.findIndex((t) => t.id === tileId);
@@ -229,6 +258,26 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
         } catch (error) {
           setConnectionStatus('error');
         }
+      }
+    },
+    [connectionStatus]
+  );
+
+  const sendProgramRun = useCallback(
+    (program: ProgramRunPayload) => {
+      if (!socketRef.current || connectionStatus !== 'connected') return false;
+      try {
+        socketRef.current.send(
+          JSON.stringify({
+            type: 'program',
+            program,
+            requestedAt: Date.now(),
+          })
+        );
+        return true;
+      } catch {
+        setConnectionStatus('error');
+        return false;
       }
     },
     [connectionStatus]
@@ -386,6 +435,8 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
       lastPayload,
       gyroCalibration,
       calibrateGyro,
+      sendProgramRun,
+      goToPose,
     }),
     [
       jointConfigs,
@@ -402,6 +453,8 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
       lastPayload,
       gyroCalibration,
       calibrateGyro,
+      sendProgramRun,
+      goToPose,
     ]
   );
 

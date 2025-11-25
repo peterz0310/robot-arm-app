@@ -1,8 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { router } from "expo-router";
 
 import { ControlSlider } from "@/components/control-slider";
+import { usePrograms } from "@/hooks/use-programs";
 import { useRobotController } from "@/hooks/use-robot-controller";
 
 const palette = {
@@ -39,6 +41,7 @@ function ConnectionBadge({ status }: { status: string }) {
 }
 
 export default function ControlScreen() {
+  const { activeProgram, appendWaypointFromAngles } = usePrograms();
   const {
     controlTiles,
     reorderTile,
@@ -51,8 +54,20 @@ export default function ControlScreen() {
     updateSettings,
     lastPayload,
   } = useRobotController();
+  const [snapshotMessage, setSnapshotMessage] = useState<string | null>(null);
 
   const insets = useSafeAreaInsets();
+
+  const handleSnapshot = async () => {
+    if (!activeProgram) {
+      setSnapshotMessage("Select a program on the Programs tab to start capturing waypoints.");
+      return;
+    }
+    const updated = await appendWaypointFromAngles(jointAngles);
+    if (updated) {
+      setSnapshotMessage(`Saved waypoint #${updated.waypoints.length} to ${updated.name}`);
+    }
+  };
 
   return (
     <ScrollView
@@ -105,6 +120,68 @@ export default function ControlScreen() {
             </Text>
           </Pressable>
         </View>
+      </View>
+
+      <View style={[styles.card, { borderColor: activeProgram ? palette.accent : palette.border }]}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Program editing</Text>
+          {activeProgram ? (
+            <View
+              style={[
+                styles.badge,
+                { backgroundColor: `${palette.accent}22`, borderColor: palette.accent },
+              ]}
+            >
+              <Text style={[styles.badgeText, { color: palette.accent }]}>ACTIVE</Text>
+            </View>
+          ) : (
+            <Text style={styles.cardHint}>No program selected</Text>
+          )}
+        </View>
+        {activeProgram ? (
+          <>
+            <Text style={styles.hint}>
+              {activeProgram.name} · {activeProgram.waypoints.length} waypoint
+              {activeProgram.waypoints.length === 1 ? "" : "s"}
+            </Text>
+            <View style={styles.actionsRow}>
+              <Pressable
+                style={[styles.actionButton, { backgroundColor: palette.accent }]}
+                onPress={handleSnapshot}
+              >
+                <Text style={[styles.actionText, { color: "#041015" }]}>Snapshot pose</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.actionButton,
+                  {
+                    borderColor: palette.border,
+                    borderWidth: 1,
+                    backgroundColor: palette.elevated,
+                  },
+                ]}
+                onPress={() => router.push(`/programs/${activeProgram.id}`)}
+              >
+                <Text style={styles.actionText}>Open program</Text>
+              </Pressable>
+            </View>
+            {snapshotMessage ? <Text style={styles.hint}>{snapshotMessage}</Text> : null}
+          </>
+        ) : (
+          <Pressable
+            style={[
+              styles.actionButton,
+              {
+                borderColor: palette.border,
+                borderWidth: 1,
+                backgroundColor: palette.elevated,
+              },
+            ]}
+            onPress={() => router.push("/programs")}
+          >
+            <Text style={styles.actionText}>Go to Programs</Text>
+          </Pressable>
+        )}
       </View>
 
       {controlTiles.map((tile, index) => {
