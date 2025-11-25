@@ -1,3 +1,5 @@
+import * as FileSystem from "expo-file-system";
+import { DeviceMotion } from "expo-sensors";
 import React, {
   createContext,
   useCallback,
@@ -6,12 +8,16 @@ import React, {
   useMemo,
   useRef,
   useState,
-} from 'react';
-import { AppState } from 'react-native';
-import * as FileSystem from 'expo-file-system';
-import { DeviceMotion } from 'expo-sensors';
+} from "react";
+import { AppState } from "react-native";
 
-export type JointId = 'base' | 'armA' | 'armB' | 'wristA' | 'wristB' | 'gripper';
+export type JointId =
+  | "base"
+  | "armA"
+  | "armB"
+  | "wristA"
+  | "wristB"
+  | "gripper";
 
 export type JointConfig = {
   label: string;
@@ -31,11 +37,11 @@ export type ProgramRunPayload = {
 type ControlTile = {
   id: string;
   label: string;
-  type: 'slider' | 'gyro';
+  type: "slider" | "gyro";
   joint: JointId;
 };
 
-type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
 type RobotSettings = {
   wsAddress: string;
@@ -58,7 +64,7 @@ type RobotControllerContextValue = {
   homeAll: () => void;
   setJointConfig: (joint: JointId, config: Partial<JointConfig>) => void;
   controlTiles: ControlTile[];
-  reorderTile: (tileId: string, direction: 'up' | 'down') => void;
+  reorderTile: (tileId: string, direction: "up" | "down") => void;
   remapTile: (tileId: string, joint: JointId) => void;
   connectionStatus: ConnectionStatus;
   settings: RobotSettings;
@@ -68,20 +74,30 @@ type RobotControllerContextValue = {
   calibrateGyro: () => void;
   sendProgramRun: (program: ProgramRunPayload) => boolean;
   goToPose: (pose: JointAngles) => void;
+  emergencyStop: () => void;
+  resumeAfterStop: () => void;
+  isEmergencyStopped: boolean;
 };
 
-const JOINTS: JointId[] = ['base', 'armA', 'armB', 'wristA', 'wristB', 'gripper'];
+const JOINTS: JointId[] = [
+  "base",
+  "armA",
+  "armB",
+  "wristA",
+  "wristB",
+  "gripper",
+];
 const STORAGE_FILE = FileSystem.documentDirectory
   ? `${FileSystem.documentDirectory}robot-controller.json`
   : null;
 
 const defaultConfigs: Record<JointId, JointConfig> = {
-  base: { label: 'Base', min: 0, max: 180, home: 90 },
-  armA: { label: 'Arm A1/A2', min: 10, max: 170, home: 90 },
-  armB: { label: 'Arm B', min: 0, max: 180, home: 90 },
-  wristA: { label: 'Wrist A', min: 0, max: 180, home: 90 },
-  wristB: { label: 'Wrist B', min: 0, max: 180, home: 90 },
-  gripper: { label: 'Gripper', min: 20, max: 160, home: 90 },
+  base: { label: "Base", min: 0, max: 180, home: 90 },
+  armA: { label: "Arm A1/A2", min: 10, max: 170, home: 90 },
+  armB: { label: "Arm B", min: 0, max: 180, home: 90 },
+  wristA: { label: "Wrist A", min: 0, max: 180, home: 90 },
+  wristB: { label: "Wrist B", min: 0, max: 180, home: 90 },
+  gripper: { label: "Gripper", min: 20, max: 160, home: 90 },
 };
 
 const defaultAngles: JointAngles = {
@@ -94,37 +110,61 @@ const defaultAngles: JointAngles = {
 };
 
 const defaultTiles: ControlTile[] = [
-  { id: 'tile-base', label: 'Base sweep', type: 'slider', joint: 'base' },
-  { id: 'tile-arm-a', label: 'Arm A lift', type: 'slider', joint: 'armA' },
-  { id: 'tile-arm-b', label: 'Arm B reach', type: 'slider', joint: 'armB' },
-  { id: 'tile-wrist-a', label: 'Wrist A pitch', type: 'slider', joint: 'wristA' },
-  { id: 'tile-wrist-b', label: 'Wrist B roll', type: 'slider', joint: 'wristB' },
-  { id: 'tile-gripper', label: 'Gripper', type: 'slider', joint: 'gripper' },
-  { id: 'tile-gyro', label: 'Gyro control', type: 'gyro', joint: 'base' },
+  { id: "tile-base", label: "Base sweep", type: "slider", joint: "base" },
+  { id: "tile-arm-a", label: "Arm A lift", type: "slider", joint: "armA" },
+  { id: "tile-arm-b", label: "Arm B reach", type: "slider", joint: "armB" },
+  {
+    id: "tile-wrist-a",
+    label: "Wrist A pitch",
+    type: "slider",
+    joint: "wristA",
+  },
+  {
+    id: "tile-wrist-b",
+    label: "Wrist B roll",
+    type: "slider",
+    joint: "wristB",
+  },
+  { id: "tile-gripper", label: "Gripper", type: "slider", joint: "gripper" },
+  { id: "tile-gyro", label: "Gyro control", type: "gyro", joint: "base" },
 ];
 
-const RobotControllerContext = createContext<RobotControllerContextValue | null>(null);
+const RobotControllerContext =
+  createContext<RobotControllerContextValue | null>(null);
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-export function RobotControllerProvider({ children }: { children: React.ReactNode }) {
-  const [jointConfigs, setJointConfigs] = useState<Record<JointId, JointConfig>>(defaultConfigs);
+export function RobotControllerProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const [jointConfigs, setJointConfigs] =
+    useState<Record<JointId, JointConfig>>(defaultConfigs);
   const [jointAngles, setJointAngles] = useState<JointAngles>(defaultAngles);
   const [controlTiles, setControlTiles] = useState<ControlTile[]>(defaultTiles);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
+  const [connectionStatus, setConnectionStatus] =
+    useState<ConnectionStatus>("disconnected");
   const [settings, setSettings] = useState<RobotSettings>({
-    wsAddress: '',
+    wsAddress: "",
     debug: false,
     gyroEnabled: false,
     gyroScale: 70,
-    gyroPitchJoint: 'armA',
-    gyroRollJoint: 'base',
+    gyroPitchJoint: "armA",
+    gyroRollJoint: "base",
   });
-  const [lastPayload, setLastPayload] = useState<string>('');
-  const [gyroCalibration, setGyroCalibration] = useState<GyroCalibration>({ pitch: 0, roll: 0 });
-  const lastMotion = useRef<{ pitch: number; roll: number }>({ pitch: 0, roll: 0 });
+  const [lastPayload, setLastPayload] = useState<string>("");
+  const [gyroCalibration, setGyroCalibration] = useState<GyroCalibration>({
+    pitch: 0,
+    roll: 0,
+  });
+  const [isEmergencyStopped, setIsEmergencyStopped] = useState<boolean>(false);
+  const lastMotion = useRef<{ pitch: number; roll: number }>({
+    pitch: 0,
+    roll: 0,
+  });
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestSnapshot = useRef<{
     jointConfigs: typeof jointConfigs;
@@ -145,27 +185,30 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
     });
   }, [jointConfigs]);
 
-  const setJointConfig = useCallback((joint: JointId, config: Partial<JointConfig>) => {
-    setJointConfigs((current) => {
-      const existing = current[joint];
-      const rawMin = config.min ?? existing.min;
-      const rawMax = config.max ?? existing.max;
-      const min = Math.min(rawMin, rawMax);
-      const max = Math.max(rawMin, rawMax);
-      const home = clamp(config.home ?? existing.home, min, max);
+  const setJointConfig = useCallback(
+    (joint: JointId, config: Partial<JointConfig>) => {
+      setJointConfigs((current) => {
+        const existing = current[joint];
+        const rawMin = config.min ?? existing.min;
+        const rawMax = config.max ?? existing.max;
+        const min = Math.min(rawMin, rawMax);
+        const max = Math.max(rawMin, rawMax);
+        const home = clamp(config.home ?? existing.home, min, max);
 
-      return {
-        ...current,
-        [joint]: {
-          ...existing,
-          ...config,
-          min,
-          max,
-          home,
-        },
-      };
-    });
-  }, []);
+        return {
+          ...current,
+          [joint]: {
+            ...existing,
+            ...config,
+            min,
+            max,
+            home,
+          },
+        };
+      });
+    },
+    []
+  );
 
   const updateJoint = useCallback(
     (joint: JointId, angle: number) => {
@@ -199,19 +242,22 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
     [jointConfigs]
   );
 
-  const reorderTile = useCallback((tileId: string, direction: 'up' | 'down') => {
-    setControlTiles((tiles) => {
-      const index = tiles.findIndex((t) => t.id === tileId);
-      if (index === -1) return tiles;
-      const targetIndex = direction === 'up' ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= tiles.length) return tiles;
-      const swapped = [...tiles];
-      const temp = swapped[index];
-      swapped[index] = swapped[targetIndex];
-      swapped[targetIndex] = temp;
-      return swapped;
-    });
-  }, []);
+  const reorderTile = useCallback(
+    (tileId: string, direction: "up" | "down") => {
+      setControlTiles((tiles) => {
+        const index = tiles.findIndex((t) => t.id === tileId);
+        if (index === -1) return tiles;
+        const targetIndex = direction === "up" ? index - 1 : index + 1;
+        if (targetIndex < 0 || targetIndex >= tiles.length) return tiles;
+        const swapped = [...tiles];
+        const temp = swapped[index];
+        swapped[index] = swapped[targetIndex];
+        swapped[targetIndex] = temp;
+        return swapped;
+      });
+    },
+    []
+  );
 
   const remapTile = useCallback((tileId: string, joint: JointId) => {
     setControlTiles((tiles) =>
@@ -236,8 +282,11 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
 
   const sendPayload = useCallback(
     (angles: JointAngles) => {
+      if (isEmergencyStopped) {
+        return; // Block all motion commands when emergency stopped
+      }
       const now = Date.now();
-      if (now - lastSendRef.current < 50) {
+      if (now - lastSendRef.current < 100) {
         return;
       }
       lastSendRef.current = now;
@@ -252,11 +301,11 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
       });
       setLastPayload(payload);
 
-      if (socketRef.current && connectionStatus === 'connected') {
+      if (socketRef.current && connectionStatus === "connected") {
         try {
           socketRef.current.send(payload);
         } catch (error) {
-          setConnectionStatus('error');
+          setConnectionStatus("error");
         }
       }
     },
@@ -265,23 +314,57 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
 
   const sendProgramRun = useCallback(
     (program: ProgramRunPayload) => {
-      if (!socketRef.current || connectionStatus !== 'connected') return false;
+      if (!socketRef.current || connectionStatus !== "connected") return false;
       try {
         socketRef.current.send(
           JSON.stringify({
-            type: 'program',
+            type: "program",
             program,
             requestedAt: Date.now(),
           })
         );
         return true;
       } catch {
-        setConnectionStatus('error');
+        setConnectionStatus("error");
         return false;
       }
     },
     [connectionStatus]
   );
+
+  const emergencyStop = useCallback(() => {
+    if (socketRef.current && connectionStatus === "connected") {
+      try {
+        socketRef.current.send(JSON.stringify({ emergencyStop: true }));
+      } catch {
+        // If send fails, connection is already broken
+      }
+    }
+    // Disable gyro to prevent further motion commands
+    updateSettings({ gyroEnabled: false });
+    setIsEmergencyStopped(true);
+  }, [connectionStatus, updateSettings]);
+
+  const resumeAfterStop = useCallback(() => {
+    setIsEmergencyStopped(false);
+    // Send current angles to resume from current position
+    if (socketRef.current && connectionStatus === "connected") {
+      try {
+        const payload = JSON.stringify({
+          base: jointAngles.base,
+          armA: jointAngles.armA,
+          armB: jointAngles.armB,
+          wristA: jointAngles.wristA,
+          wristB: jointAngles.wristB,
+          gripper: jointAngles.gripper,
+          timestamp: Date.now(),
+        });
+        socketRef.current.send(payload);
+      } catch {
+        setConnectionStatus("error");
+      }
+    }
+  }, [connectionStatus, jointAngles]);
 
   useEffect(() => {
     sendPayload(jointAngles);
@@ -296,9 +379,11 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
         if (!info.exists) return;
         const raw = await FileSystem.readAsStringAsync(STORAGE_FILE);
         const parsed = JSON.parse(raw);
-        if (parsed.jointConfigs) setJointConfigs((prev) => ({ ...prev, ...parsed.jointConfigs }));
+        if (parsed.jointConfigs)
+          setJointConfigs((prev) => ({ ...prev, ...parsed.jointConfigs }));
         if (parsed.controlTiles) setControlTiles(parsed.controlTiles);
-        if (parsed.settings) setSettings((prev) => ({ ...prev, ...parsed.settings }));
+        if (parsed.settings)
+          setSettings((prev) => ({ ...prev, ...parsed.settings }));
       } catch {
         // ignore hydration errors
       }
@@ -312,7 +397,11 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
   }, []);
 
   const persistState = useCallback(
-    (data: { jointConfigs: typeof jointConfigs; controlTiles: typeof controlTiles; settings: typeof settings }) => {
+    (data: {
+      jointConfigs: typeof jointConfigs;
+      controlTiles: typeof controlTiles;
+      settings: typeof settings;
+    }) => {
       if (!STORAGE_FILE) return;
       latestSnapshot.current = data;
       if (persistTimer.current) clearTimeout(persistTimer.current);
@@ -363,21 +452,45 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
         socketRef.current.close();
         socketRef.current = null;
       }
-      setConnectionStatus('disconnected');
+      setConnectionStatus("disconnected");
       return;
     }
 
-    setConnectionStatus('connecting');
-    const ws = new WebSocket(settings.wsAddress);
-    socketRef.current = ws;
+    // Basic WebSocket URL validation
+    if (
+      !settings.wsAddress.startsWith("ws://") &&
+      !settings.wsAddress.startsWith("wss://")
+    ) {
+      setConnectionStatus("error");
+      return;
+    }
 
-    ws.onopen = () => setConnectionStatus('connected');
-    ws.onerror = () => setConnectionStatus('error');
-    ws.onclose = () => setConnectionStatus('disconnected');
+    setConnectionStatus("connecting");
+    let ws: WebSocket | null = null;
+    try {
+      ws = new WebSocket(settings.wsAddress);
+      socketRef.current = ws;
+
+      ws.onopen = () => setConnectionStatus("connected");
+      ws.onerror = () => setConnectionStatus("error");
+      ws.onclose = () => {
+        setConnectionStatus("disconnected");
+        if (socketRef.current === ws) {
+          socketRef.current = null;
+        }
+      };
+    } catch (error) {
+      setConnectionStatus("error");
+      return;
+    }
 
     return () => {
-      ws.close();
-      socketRef.current = null;
+      if (ws) {
+        ws.close();
+      }
+      if (socketRef.current === ws) {
+        socketRef.current = null;
+      }
     };
   }, [settings.wsAddress]);
 
@@ -387,7 +500,7 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
       return;
     }
 
-    DeviceMotion.setUpdateInterval(80);
+    DeviceMotion.setUpdateInterval(120);
     const subscription = DeviceMotion.addListener((motion) => {
       const pitch = motion.rotation?.beta ?? 0; // forward/back
       const roll = motion.rotation?.gamma ?? 0; // side/side
@@ -406,18 +519,30 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
         const cfg = jointConfigs[target];
         const span = Math.min(cfg.max - cfg.home, cfg.home - cfg.min);
         const normalized = clamp(raw / 90, -1, 1);
-        const nextAngle = clamp(cfg.home + normalized * span * (settings.gyroScale / 90), cfg.min, cfg.max);
+        const nextAngle = clamp(
+          cfg.home + normalized * span * (settings.gyroScale / 90),
+          cfg.min,
+          cfg.max
+        );
         updateJoint(target, nextAngle);
       };
 
-      applyGyro(degreesPitch, settings.gyroPitchJoint, 'armA');
-      applyGyro(degreesRoll, settings.gyroRollJoint, 'base');
+      applyGyro(degreesPitch, settings.gyroPitchJoint, "armA");
+      applyGyro(degreesRoll, settings.gyroRollJoint, "base");
     });
 
     return () => {
       subscription.remove();
     };
-  }, [gyroCalibration, jointConfigs, settings.gyroEnabled, settings.gyroPitchJoint, settings.gyroRollJoint, settings.gyroScale, updateJoint]);
+  }, [
+    gyroCalibration,
+    jointConfigs,
+    settings.gyroEnabled,
+    settings.gyroPitchJoint,
+    settings.gyroRollJoint,
+    settings.gyroScale,
+    updateJoint,
+  ]);
 
   const value = useMemo<RobotControllerContextValue>(
     () => ({
@@ -437,6 +562,9 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
       calibrateGyro,
       sendProgramRun,
       goToPose,
+      emergencyStop,
+      resumeAfterStop,
+      isEmergencyStopped,
     }),
     [
       jointConfigs,
@@ -455,6 +583,9 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
       calibrateGyro,
       sendProgramRun,
       goToPose,
+      emergencyStop,
+      resumeAfterStop,
+      isEmergencyStopped,
     ]
   );
 
@@ -464,8 +595,8 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (!STORAGE_FILE) return;
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state !== 'active' && persistTimer.current) {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active" && persistTimer.current) {
         // Flush pending writes when backgrounding.
         const snapshot = latestSnapshot.current;
         if (!snapshot) return;
@@ -486,16 +617,25 @@ export function RobotControllerProvider({ children }: { children: React.ReactNod
     return () => sub.remove();
   }, []);
 
-  return <RobotControllerContext.Provider value={value}>{children}</RobotControllerContext.Provider>;
+  return (
+    <RobotControllerContext.Provider value={value}>
+      {children}
+    </RobotControllerContext.Provider>
+  );
 }
 
 export function useRobotController() {
   const ctx = useContext(RobotControllerContext);
-  if (!ctx) throw new Error('useRobotController must be used inside RobotControllerProvider');
+  if (!ctx)
+    throw new Error(
+      "useRobotController must be used inside RobotControllerProvider"
+    );
   return ctx;
 }
 
-export const JOINT_OPTIONS: { id: JointId; label: string }[] = JOINTS.map((id) => ({
-  id,
-  label: defaultConfigs[id].label,
-}));
+export const JOINT_OPTIONS: { id: JointId; label: string }[] = JOINTS.map(
+  (id) => ({
+    id,
+    label: defaultConfigs[id].label,
+  })
+);

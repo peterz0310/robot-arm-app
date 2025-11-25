@@ -1,7 +1,7 @@
+import { router } from "expo-router";
 import React, { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { router } from "expo-router";
 
 import { ControlSlider } from "@/components/control-slider";
 import { usePrograms } from "@/hooks/use-programs";
@@ -53,6 +53,9 @@ export default function ControlScreen() {
     settings,
     updateSettings,
     lastPayload,
+    emergencyStop,
+    resumeAfterStop,
+    isEmergencyStopped,
   } = useRobotController();
   const [snapshotMessage, setSnapshotMessage] = useState<string | null>(null);
 
@@ -60,12 +63,16 @@ export default function ControlScreen() {
 
   const handleSnapshot = async () => {
     if (!activeProgram) {
-      setSnapshotMessage("Select a program on the Programs tab to start capturing waypoints.");
+      setSnapshotMessage(
+        "Select a program on the Programs tab to start capturing waypoints."
+      );
       return;
     }
     const updated = await appendWaypointFromAngles(jointAngles);
     if (updated) {
-      setSnapshotMessage(`Saved waypoint #${updated.waypoints.length} to ${updated.name}`);
+      setSnapshotMessage(
+        `Saved waypoint #${updated.waypoints.length} to ${updated.name}`
+      );
     }
   };
 
@@ -87,6 +94,22 @@ export default function ControlScreen() {
           </View>
           <ConnectionBadge status={connectionStatus} />
         </View>
+        {isEmergencyStopped && (
+          <View
+            style={[
+              styles.badge,
+              {
+                backgroundColor: `${palette.danger}22`,
+                borderColor: palette.danger,
+                width: "100%",
+              },
+            ]}
+          >
+            <Text style={[styles.badgeText, { color: palette.danger }]}>
+              ⚠️ EMERGENCY STOP ACTIVE - Press Resume to continue
+            </Text>
+          </View>
+        )}
         <View style={styles.headerRow}>
           <Text style={styles.label}>WebSocket</Text>
           <Text style={styles.value}>
@@ -119,20 +142,59 @@ export default function ControlScreen() {
               {settings.gyroEnabled ? "Disable gyro" : "Enable gyro"}
             </Text>
           </Pressable>
+          {isEmergencyStopped ? (
+            <Pressable
+              style={[
+                styles.actionButton,
+                {
+                  backgroundColor: palette.accent,
+                },
+              ]}
+              onPress={resumeAfterStop}
+            >
+              <Text style={[styles.actionText, { color: "#041015" }]}>
+                Resume Operation
+              </Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              style={[
+                styles.actionButton,
+                {
+                  backgroundColor: palette.danger,
+                },
+              ]}
+              onPress={emergencyStop}
+            >
+              <Text style={[styles.actionText, { color: "#fff" }]}>
+                Emergency Stop
+              </Text>
+            </Pressable>
+          )}
         </View>
       </View>
 
-      <View style={[styles.card, { borderColor: activeProgram ? palette.accent : palette.border }]}>
+      <View
+        style={[
+          styles.card,
+          { borderColor: activeProgram ? palette.accent : palette.border },
+        ]}
+      >
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>Program editing</Text>
           {activeProgram ? (
             <View
               style={[
                 styles.badge,
-                { backgroundColor: `${palette.accent}22`, borderColor: palette.accent },
+                {
+                  backgroundColor: `${palette.accent}22`,
+                  borderColor: palette.accent,
+                },
               ]}
             >
-              <Text style={[styles.badgeText, { color: palette.accent }]}>ACTIVE</Text>
+              <Text style={[styles.badgeText, { color: palette.accent }]}>
+                ACTIVE
+              </Text>
             </View>
           ) : (
             <Text style={styles.cardHint}>No program selected</Text>
@@ -146,10 +208,15 @@ export default function ControlScreen() {
             </Text>
             <View style={styles.actionsRow}>
               <Pressable
-                style={[styles.actionButton, { backgroundColor: palette.accent }]}
+                style={[
+                  styles.actionButton,
+                  { backgroundColor: palette.accent },
+                ]}
                 onPress={handleSnapshot}
               >
-                <Text style={[styles.actionText, { color: "#041015" }]}>Snapshot pose</Text>
+                <Text style={[styles.actionText, { color: "#041015" }]}>
+                  Snapshot pose
+                </Text>
               </Pressable>
               <Pressable
                 style={[
@@ -165,7 +232,9 @@ export default function ControlScreen() {
                 <Text style={styles.actionText}>Open program</Text>
               </Pressable>
             </View>
-            {snapshotMessage ? <Text style={styles.hint}>{snapshotMessage}</Text> : null}
+            {snapshotMessage ? (
+              <Text style={styles.hint}>{snapshotMessage}</Text>
+            ) : null}
           </>
         ) : (
           <Pressable
