@@ -1,4 +1,4 @@
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { DeviceMotion } from "expo-sensors";
 import React, {
   createContext,
@@ -41,7 +41,12 @@ type ControlTile = {
   joint: JointId;
 };
 
-type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+type ConnectionStatus =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "error"
+  | "reconnecting";
 
 type RobotSettings = {
   wsAddress: string;
@@ -67,6 +72,7 @@ type RobotControllerContextValue = {
   reorderTile: (tileId: string, direction: "up" | "down") => void;
   remapTile: (tileId: string, joint: JointId) => void;
   connectionStatus: ConnectionStatus;
+  reconnectAttempts: number;
   settings: RobotSettings;
   updateSettings: (next: Partial<RobotSettings>) => void;
   lastPayload: string;
@@ -161,6 +167,12 @@ export function RobotControllerProvider({
     roll: 0,
   });
   const [isEmergencyStopped, setIsEmergencyStopped] = useState<boolean>(false);
+  const isEmergencyStoppedRef = useRef<boolean>(false);
+  const [reconnectAttempts, setReconnectAttempts] = useState<number>(0);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const shouldReconnectRef = useRef<boolean>(true);
   const lastMotion = useRef<{ pitch: number; roll: number }>({
     pitch: 0,
     roll: 0,
@@ -282,7 +294,7 @@ export function RobotControllerProvider({
 
   const sendPayload = useCallback(
     (angles: JointAngles) => {
-      if (isEmergencyStopped) {
+      if (isEmergencyStoppedRef.current) {
         return; // Block all motion commands when emergency stopped
       }
       const now = Date.now();
@@ -343,10 +355,12 @@ export function RobotControllerProvider({
     // Disable gyro to prevent further motion commands
     updateSettings({ gyroEnabled: false });
     setIsEmergencyStopped(true);
+    isEmergencyStoppedRef.current = true;
   }, [connectionStatus, updateSettings]);
 
   const resumeAfterStop = useCallback(() => {
     setIsEmergencyStopped(false);
+    isEmergencyStoppedRef.current = false;
     // Send current angles to resume from current position
     if (socketRef.current && connectionStatus === "connected") {
       try {
@@ -375,17 +389,20 @@ export function RobotControllerProvider({
     let cancelled = false;
     (async () => {
       try {
+        console.log("[RobotController] Loading from:", STORAGE_FILE);
         const info = await FileSystem.getInfoAsync(STORAGE_FILE);
+        console.log("[RobotController] File exists:", info.exists);
         if (!info.exists) return;
         const raw = await FileSystem.readAsStringAsync(STORAGE_FILE);
         const parsed = JSON.parse(raw);
+        console.log("[RobotController] Loaded data:", Object.keys(parsed));
         if (parsed.jointConfigs)
           setJointConfigs((prev) => ({ ...prev, ...parsed.jointConfigs }));
         if (parsed.controlTiles) setControlTiles(parsed.controlTiles);
         if (parsed.settings)
           setSettings((prev) => ({ ...prev, ...parsed.settings }));
-      } catch {
-        // ignore hydration errors
+      } catch (error) {
+        console.log("[RobotController] Load error:", error);
       }
       if (!cancelled) {
         // keep current state
@@ -410,6 +427,7 @@ export function RobotControllerProvider({
         const snapshot = latestSnapshot.current;
         if (!snapshot) return;
         try {
+          console.log("[RobotController] Saving to:", STORAGE_FILE);
           await FileSystem.writeAsStringAsync(
             STORAGE_FILE,
             JSON.stringify(
@@ -422,8 +440,9 @@ export function RobotControllerProvider({
               2
             )
           );
-        } catch {
-          // swallow persist errors (e.g., if storage unavailable)
+          console.log("[RobotController] Save successful");
+        } catch (error) {
+          console.log("[RobotController] Save error:", error);
         }
       }, 150);
     },
@@ -446,14 +465,16 @@ export function RobotControllerProvider({
     });
   }, [jointConfigs]);
 
-  useEffect(() => {
+  // Calculate reconnect delay with exponential backoff (1s, 2s, 4s, 8s, max 10s)
+  const getReconnectDelay = useCallback((attempt: number) => {
+    const baseDelay = 1000;
+    const maxDelay = 10000;
+    return Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+  }, []);
+
+  const connectWebSocket = useCallback(() => {
     if (!settings.wsAddress) {
-      if (socketRef.current) {
-        socketRef.current.close();
-        socketRef.current = null;
-      }
-      setConnectionStatus("disconnected");
-      return;
+      return null;
     }
 
     // Basic WebSocket URL validation
@@ -462,29 +483,95 @@ export function RobotControllerProvider({
       !settings.wsAddress.startsWith("wss://")
     ) {
       setConnectionStatus("error");
-      return;
+      return null;
     }
 
-    setConnectionStatus("connecting");
     let ws: WebSocket | null = null;
     try {
       ws = new WebSocket(settings.wsAddress);
       socketRef.current = ws;
 
-      ws.onopen = () => setConnectionStatus("connected");
-      ws.onerror = () => setConnectionStatus("error");
+      ws.onopen = () => {
+        setConnectionStatus("connected");
+        setReconnectAttempts(0); // Reset on successful connection
+      };
+
+      ws.onerror = () => {
+        // Error will be followed by close, so we handle reconnect there
+      };
+
       ws.onclose = () => {
-        setConnectionStatus("disconnected");
         if (socketRef.current === ws) {
           socketRef.current = null;
+        }
+
+        // Only reconnect if we should (address still set, not manually disconnected)
+        if (shouldReconnectRef.current && settings.wsAddress) {
+          setConnectionStatus("reconnecting");
+          setReconnectAttempts((prev) => {
+            const nextAttempt = prev + 1;
+            const delay = getReconnectDelay(prev);
+            console.log(
+              `[WebSocket] Reconnecting in ${delay}ms (attempt ${nextAttempt})`
+            );
+
+            // Clear any existing reconnect timeout
+            if (reconnectTimeoutRef.current) {
+              clearTimeout(reconnectTimeoutRef.current);
+            }
+
+            reconnectTimeoutRef.current = setTimeout(() => {
+              reconnectTimeoutRef.current = null;
+              if (shouldReconnectRef.current && settings.wsAddress) {
+                connectWebSocket();
+              }
+            }, delay);
+
+            return nextAttempt;
+          });
+        } else {
+          setConnectionStatus("disconnected");
         }
       };
     } catch (error) {
       setConnectionStatus("error");
+      return null;
+    }
+
+    return ws;
+  }, [settings.wsAddress, getReconnectDelay]);
+
+  useEffect(() => {
+    // Clear any pending reconnect when address changes
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    if (!settings.wsAddress) {
+      shouldReconnectRef.current = false;
+      if (socketRef.current) {
+        socketRef.current.close();
+        socketRef.current = null;
+      }
+      setConnectionStatus("disconnected");
+      setReconnectAttempts(0);
       return;
     }
 
+    // Enable reconnection and reset attempts for new address
+    shouldReconnectRef.current = true;
+    setReconnectAttempts(0);
+    setConnectionStatus("connecting");
+
+    const ws = connectWebSocket();
+
     return () => {
+      shouldReconnectRef.current = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       if (ws) {
         ws.close();
       }
@@ -492,7 +579,7 @@ export function RobotControllerProvider({
         socketRef.current = null;
       }
     };
-  }, [settings.wsAddress]);
+  }, [settings.wsAddress, connectWebSocket]);
 
   useEffect(() => {
     if (!settings.gyroEnabled) {
@@ -555,6 +642,7 @@ export function RobotControllerProvider({
       reorderTile,
       remapTile,
       connectionStatus,
+      reconnectAttempts,
       settings,
       updateSettings,
       lastPayload,
@@ -576,6 +664,7 @@ export function RobotControllerProvider({
       reorderTile,
       remapTile,
       connectionStatus,
+      reconnectAttempts,
       settings,
       updateSettings,
       lastPayload,

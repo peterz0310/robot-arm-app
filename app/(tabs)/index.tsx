@@ -19,14 +19,26 @@ const palette = {
   danger: "#ff5c8a",
 };
 
-function ConnectionBadge({ status }: { status: string }) {
+function ConnectionBadge({
+  status,
+  reconnectAttempts,
+}: {
+  status: string;
+  reconnectAttempts?: number;
+}) {
   const colors: Record<string, string> = {
     connected: palette.accent,
     connecting: palette.accent2,
+    reconnecting: palette.accent2,
     disconnected: palette.muted,
     error: palette.danger,
   };
   const color = colors[status] ?? palette.muted;
+
+  const displayText =
+    status === "reconnecting" && reconnectAttempts
+      ? `RECONNECTING (${reconnectAttempts})`
+      : status.toUpperCase();
 
   return (
     <View
@@ -35,7 +47,7 @@ function ConnectionBadge({ status }: { status: string }) {
         { backgroundColor: `${color}22`, borderColor: color },
       ]}
     >
-      <Text style={[styles.badgeText, { color }]}>{status.toUpperCase()}</Text>
+      <Text style={[styles.badgeText, { color }]}>{displayText}</Text>
     </View>
   );
 }
@@ -50,6 +62,7 @@ export default function ControlScreen() {
     updateJoint,
     homeAll,
     connectionStatus,
+    reconnectAttempts,
     settings,
     updateSettings,
     lastPayload,
@@ -92,7 +105,10 @@ export default function ControlScreen() {
               Drive each joint with sliders or phone gyro.
             </Text>
           </View>
-          <ConnectionBadge status={connectionStatus} />
+          <ConnectionBadge
+            status={connectionStatus}
+            reconnectAttempts={reconnectAttempts}
+          />
         </View>
         {isEmergencyStopped && (
           <View

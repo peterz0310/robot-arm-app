@@ -1,27 +1,37 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Stack, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { DEFAULT_WAYPOINT_GAP_MS, usePrograms } from '@/hooks/use-programs';
-import { useRobotController } from '@/hooks/use-robot-controller';
+import { DEFAULT_WAYPOINT_GAP_MS, usePrograms } from "@/hooks/use-programs";
+import { useRobotController } from "@/hooks/use-robot-controller";
 
 const palette = {
-  background: '#050b10',
-  card: '#0f1b24',
-  elevated: '#112331',
-  accent: '#0dd3a5',
-  accent2: '#ff9f1c',
-  border: '#1a2e3b',
-  text: '#e9f1f7',
-  muted: '#7ea0b8',
-  danger: '#ff5c8a',
+  background: "#050b10",
+  card: "#0f1b24",
+  elevated: "#112331",
+  accent: "#0dd3a5",
+  accent2: "#ff9f1c",
+  border: "#1a2e3b",
+  text: "#e9f1f7",
+  muted: "#7ea0b8",
+  danger: "#ff5c8a",
 };
 
 export default function ProgramDetailScreen() {
   const params = useLocalSearchParams<{ programId?: string }>();
   const programId = useMemo(
-    () => (Array.isArray(params.programId) ? params.programId[0] : params.programId),
+    () =>
+      Array.isArray(params.programId) ? params.programId[0] : params.programId,
     [params.programId]
   );
   const {
@@ -38,11 +48,17 @@ export default function ProgramDetailScreen() {
   const { connectionStatus, sendProgramRun, goToPose } = useRobotController();
   const insets = useSafeAreaInsets();
 
-  const program = useMemo(() => programs.find((p) => p.id === programId), [programId, programs]);
-  const [name, setName] = useState(program?.name ?? '');
+  const program = useMemo(
+    () => programs.find((p) => p.id === programId),
+    [programId, programs]
+  );
+  const [name, setName] = useState(program?.name ?? "");
   const [durationInputs, setDurationInputs] = useState<string[]>([]);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
-  const programJson = useMemo(() => (program ? JSON.stringify(program, null, 2) : ''), [program]);
+  const programJson = useMemo(
+    () => (program ? JSON.stringify(program, null, 2) : ""),
+    [program]
+  );
 
   useEffect(() => {
     if (program) {
@@ -57,16 +73,16 @@ export default function ProgramDetailScreen() {
   }, [program]);
 
   const handleCopyJson = useCallback(async () => {
-    if (Platform.OS === 'web' && navigator?.clipboard?.writeText) {
+    if (Platform.OS === "web" && navigator?.clipboard?.writeText) {
       try {
         await navigator.clipboard.writeText(programJson);
-        setCopyStatus('Copied to clipboard');
+        setCopyStatus("Copied to clipboard");
         return;
       } catch {
         // fall through to manual instruction
       }
     }
-    setCopyStatus('Select the JSON below and use the system copy action.');
+    setCopyStatus("Select the JSON below and use the system copy action.");
   }, [programJson]);
 
   if (!programId) {
@@ -100,16 +116,20 @@ export default function ProgramDetailScreen() {
   const handleSaveDurations = async () => {
     const numeric = durationInputs.map((raw) => {
       const asNumber = Number(raw);
-      if (!Number.isFinite(asNumber) || asNumber < 0) return DEFAULT_WAYPOINT_GAP_MS;
+      if (!Number.isFinite(asNumber) || asNumber < 0)
+        return DEFAULT_WAYPOINT_GAP_MS;
       return asNumber;
     });
     await updateDurations(program.id, numeric);
-    Alert.alert('Durations saved', 'Segment times updated for this program.');
+    Alert.alert("Durations saved", "Segment times updated for this program.");
   };
 
   const handlePlay = () => {
     if (program.waypoints.length === 0) {
-      Alert.alert('Add waypoints first', 'Snapshot poses from the Control tab to build this program.');
+      Alert.alert(
+        "Add waypoints first",
+        "Snapshot poses from the Control tab to build this program."
+      );
       return;
     }
     const ok = sendProgramRun({
@@ -118,7 +138,20 @@ export default function ProgramDetailScreen() {
       waypoints: program.waypoints,
     });
     if (!ok) {
-      Alert.alert('Not connected', 'Connect to the WebSocket before sending a program.');
+      Alert.alert(
+        "Not connected",
+        "Connect to the WebSocket before sending a program."
+      );
+    } else {
+      const duration = program.waypoints[program.waypoints.length - 1].t;
+      Alert.alert(
+        "Program sent",
+        `Executing "${program.name}" with ${
+          program.waypoints.length
+        } waypoints over ${(duration / 1000).toFixed(
+          1
+        )}s. Use any slider or Emergency Stop to interrupt.`
+      );
     }
   };
 
@@ -127,7 +160,7 @@ export default function ProgramDetailScreen() {
       <Stack.Screen
         options={{
           title: program.name,
-          headerBackTitle: 'Programs',
+          headerBackTitle: "Programs",
           headerShadowVisible: false,
         }}
       />
@@ -136,7 +169,8 @@ export default function ProgramDetailScreen() {
         contentContainerStyle={[
           styles.container,
           { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 24 },
-        ]}>
+        ]}
+      >
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Program</Text>
           <Text style={styles.label}>Name</Text>
@@ -148,17 +182,34 @@ export default function ProgramDetailScreen() {
             style={styles.input}
           />
           <View style={styles.row}>
-            <Pressable style={[styles.button, { backgroundColor: palette.accent }]} onPress={handleSaveName}>
-              <Text style={[styles.buttonText, { color: '#041015' }]}>Save name</Text>
+            <Pressable
+              style={[styles.button, { backgroundColor: palette.accent }]}
+              onPress={handleSaveName}
+            >
+              <Text style={[styles.buttonText, { color: "#041015" }]}>
+                Save name
+              </Text>
             </Pressable>
             <Pressable
               style={[
                 styles.button,
-                { backgroundColor: isActive ? palette.elevated : palette.accent2, borderColor: palette.border, borderWidth: 1 },
+                {
+                  backgroundColor: isActive
+                    ? palette.elevated
+                    : palette.accent2,
+                  borderColor: palette.border,
+                  borderWidth: 1,
+                },
               ]}
-              onPress={() => selectProgram(isActive ? null : program.id)}>
-              <Text style={[styles.buttonText, { color: isActive ? palette.text : '#041015' }]}>
-                {isActive ? 'Clear editing' : 'Set as editing'}
+              onPress={() => selectProgram(isActive ? null : program.id)}
+            >
+              <Text
+                style={[
+                  styles.buttonText,
+                  { color: isActive ? palette.text : "#041015" },
+                ]}
+              >
+                {isActive ? "Clear editing" : "Set as editing"}
               </Text>
             </Pressable>
           </View>
@@ -172,20 +223,35 @@ export default function ProgramDetailScreen() {
               style={[
                 styles.button,
                 {
-                  backgroundColor: connectionStatus === 'connected' ? palette.accent : palette.elevated,
+                  backgroundColor:
+                    connectionStatus === "connected"
+                      ? palette.accent
+                      : palette.elevated,
                   borderColor: palette.border,
                   borderWidth: 1,
-                  opacity: connectionStatus === 'connected' ? 1 : 0.65,
+                  opacity: connectionStatus === "connected" ? 1 : 0.65,
                 },
               ]}
-              onPress={handlePlay}>
-              <Text style={[styles.buttonText, { color: connectionStatus === 'connected' ? '#041015' : palette.text }]}>
+              onPress={handlePlay}
+            >
+              <Text
+                style={[
+                  styles.buttonText,
+                  {
+                    color:
+                      connectionStatus === "connected"
+                        ? "#041015"
+                        : palette.text,
+                  },
+                ]}
+              >
                 Play over WebSocket
               </Text>
             </Pressable>
           </View>
           <Text style={styles.hint}>
-            Sends a `{`type: "program"`}` payload with all waypoints. The ESP32 handler comes next on your side.
+            Sends a `{`type: "program"`}` payload with all waypoints. The ESP32
+            handler comes next on your side.
           </Text>
         </View>
 
@@ -193,7 +259,8 @@ export default function ProgramDetailScreen() {
           <Text style={styles.cardTitle}>Waypoints</Text>
           {program.waypoints.length === 0 ? (
             <Text style={styles.hint}>
-              No waypoints yet. Choose “Set as editing” then snapshot poses from the Control tab to populate this program.
+              No waypoints yet. Choose “Set as editing” then snapshot poses from
+              the Control tab to populate this program.
             </Text>
           ) : (
             program.waypoints.map((waypoint, index) => (
@@ -205,38 +272,57 @@ export default function ProgramDetailScreen() {
                   <View style={styles.waypointActions}>
                     <Pressable
                       onPress={() => goToPose(waypoint.joints)}
-                      style={[styles.chipButton, styles.chipGo]}>
-                      <Text style={[styles.chipText, styles.chipGoText]}>Go to pose</Text>
+                      style={[styles.chipButton, styles.chipGo]}
+                    >
+                      <Text style={[styles.chipText, styles.chipGoText]}>
+                        Go to pose
+                      </Text>
                     </Pressable>
                     <Pressable
-                      onPress={() => moveWaypoint(program.id, waypoint.id, 'up')}
+                      onPress={() =>
+                        moveWaypoint(program.id, waypoint.id, "up")
+                      }
                       disabled={index === 0}
                       style={[
                         styles.chipButton,
                         styles.chipButtonNeutral,
                         index === 0 && styles.chipDisabled,
-                      ]}>
+                      ]}
+                    >
                       <Text style={styles.chipText}>Move up</Text>
                     </Pressable>
                     <Pressable
-                      onPress={() => moveWaypoint(program.id, waypoint.id, 'down')}
+                      onPress={() =>
+                        moveWaypoint(program.id, waypoint.id, "down")
+                      }
                       disabled={index === program.waypoints.length - 1}
                       style={[
                         styles.chipButton,
                         styles.chipButtonNeutral,
-                        index === program.waypoints.length - 1 && styles.chipDisabled,
-                      ]}>
+                        index === program.waypoints.length - 1 &&
+                          styles.chipDisabled,
+                      ]}
+                    >
                       <Text style={styles.chipText}>Move down</Text>
                     </Pressable>
                     <Pressable
                       onPress={() => duplicateWaypoint(program.id, waypoint.id)}
-                      style={[styles.chipButton, styles.chipButtonNeutral]}>
+                      style={[styles.chipButton, styles.chipButtonNeutral]}
+                    >
                       <Text style={styles.chipText}>Duplicate</Text>
                     </Pressable>
                     <Pressable
                       onPress={() => deleteWaypoint(program.id, waypoint.id)}
-                      style={[styles.chipButton, { borderColor: palette.danger }]}>
-                      <Text style={[styles.chipText, { color: palette.danger }]}>Delete</Text>
+                      style={[
+                        styles.chipButton,
+                        { borderColor: palette.danger },
+                      ]}
+                    >
+                      <Text
+                        style={[styles.chipText, { color: palette.danger }]}
+                      >
+                        Delete
+                      </Text>
                     </Pressable>
                   </View>
                 </View>
@@ -244,7 +330,9 @@ export default function ProgramDetailScreen() {
                   {Object.entries(waypoint.joints).map(([joint, angle]) => (
                     <View key={joint} style={styles.jointPill}>
                       <Text style={styles.jointLabel}>{joint}</Text>
-                      <Text style={styles.jointValue}>{Number(angle).toFixed(1)}°</Text>
+                      <Text style={styles.jointValue}>
+                        {Number(angle).toFixed(1)}°
+                      </Text>
                     </View>
                   ))}
                 </View>
@@ -253,11 +341,13 @@ export default function ProgramDetailScreen() {
                   <View style={styles.durationRow}>
                     <Text style={styles.label}>Time to next (ms)</Text>
                     <TextInput
-                      value={durationInputs[index] ?? String(DEFAULT_WAYPOINT_GAP_MS)}
+                      value={
+                        durationInputs[index] ?? String(DEFAULT_WAYPOINT_GAP_MS)
+                      }
                       onChangeText={(txt) =>
                         setDurationInputs((current) => {
                           const next = [...current];
-                          next[index] = txt.replace(/[^0-9.]/g, '');
+                          next[index] = txt.replace(/[^0-9.]/g, "");
                           return next;
                         })
                       }
@@ -270,8 +360,13 @@ export default function ProgramDetailScreen() {
             ))
           )}
           {program.waypoints.length > 1 && (
-            <Pressable style={[styles.button, { backgroundColor: palette.accent }]} onPress={handleSaveDurations}>
-              <Text style={[styles.buttonText, { color: '#041015' }]}>Save durations</Text>
+            <Pressable
+              style={[styles.button, { backgroundColor: palette.accent }]}
+              onPress={handleSaveDurations}
+            >
+              <Text style={[styles.buttonText, { color: "#041015" }]}>
+                Save durations
+              </Text>
             </Pressable>
           )}
         </View>
@@ -279,7 +374,17 @@ export default function ProgramDetailScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Program JSON</Text>
           <View style={styles.row}>
-            <Pressable style={[styles.button, { backgroundColor: palette.elevated, borderColor: palette.border, borderWidth: 1 }]} onPress={handleCopyJson}>
+            <Pressable
+              style={[
+                styles.button,
+                {
+                  backgroundColor: palette.elevated,
+                  borderColor: palette.border,
+                  borderWidth: 1,
+                },
+              ]}
+              onPress={handleCopyJson}
+            >
               <Text style={styles.buttonText}>Copy JSON</Text>
             </Pressable>
             {copyStatus ? <Text style={styles.hint}>{copyStatus}</Text> : null}
@@ -287,7 +392,10 @@ export default function ProgramDetailScreen() {
           <Text selectable selectionColor={palette.accent} style={styles.code}>
             {programJson}
           </Text>
-          <Text style={styles.hint}>Long-press to select and copy if the button cannot access your clipboard.</Text>
+          <Text style={styles.hint}>
+            Long-press to select and copy if the button cannot access your
+            clipboard.
+          </Text>
         </View>
       </ScrollView>
     </>
@@ -310,24 +418,24 @@ const styles = StyleSheet.create({
   cardTitle: {
     color: palette.text,
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   label: {
     color: palette.muted,
-    fontWeight: '700',
-    textTransform: 'uppercase',
+    fontWeight: "700",
+    textTransform: "uppercase",
     letterSpacing: 0.6,
   },
   value: {
     color: palette.text,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   hint: {
     color: palette.muted,
   },
   row: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   button: {
@@ -337,7 +445,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: palette.text,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   input: {
     backgroundColor: palette.elevated,
@@ -357,33 +465,33 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   waypointHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
     gap: 8,
-    width: '100%',
+    width: "100%",
   },
   jointGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   jointPill: {
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: '#0a141c',
+    backgroundColor: "#0a141c",
     borderWidth: 1,
     borderColor: palette.border,
   },
   jointLabel: {
     color: palette.muted,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   jointValue: {
     color: palette.text,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   durationRow: {
     gap: 6,
@@ -409,22 +517,22 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   waypointActions: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 6,
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
   },
   chipText: {
-    fontWeight: '700',
+    fontWeight: "700",
     color: palette.text,
   },
   code: {
-    backgroundColor: '#0a141c',
+    backgroundColor: "#0a141c",
     padding: 12,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: palette.border,
-    fontFamily: 'monospace',
+    fontFamily: "monospace",
     color: palette.muted,
     fontSize: 12,
   },
