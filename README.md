@@ -1,8 +1,31 @@
 # Robot Arm Control (Expo)
 
-An Expo-managed app for driving a 6-axis robotic arm over WebSocket. It lets you send absolute angles per joint, set safe ranges and home positions, view live payloads, and optionally use phone gyros for two virtual axes—all without ejecting.
+An Expo/React Native mobile app for controlling a 6-axis 3D printed robotic arm over WebSocket. Drive joints with sliders, capture waypoint programs, or use your phone's gyroscope for intuitive control.
 
-## Quick start
+## Credits
+
+This project is based on the excellent mechanical design by **Emre Kalem**:
+
+🔗 **Original Design:** [Robotic Arm with Servo Arduino on MakerWorld](https://makerworld.com/en/models/1134925-robotic-arm-with-servo-arduino)
+
+The original design used an Arduino with a serial-based controller. This app is part of a complete rewrite using an ESP32 for wireless WebSocket control from a mobile device.
+
+## Related Repository
+
+🤖 **Firmware:** [robot-arm](https://github.com/peterz0310/robot-arm) — ESP32 firmware that receives commands from this app and drives the servos.
+
+## Features
+
+- **Joint sliders:** Base, Arm A, Arm B, Wrist A, Wrist B, Gripper with re-orderable tiles
+- **Safety limits:** Per-joint min/max/home values; commands are clamped before sending
+- **One-tap homing:** Return all joints to configured home positions
+- **Program recording:** Create named programs, snapshot poses, edit segment timings, play back on the arm
+- **Gyro control:** Use phone pitch/roll to control two joints; calibrate to current orientation
+- **Auto-reconnect:** Exponential backoff reconnection with status indicator
+- **Emergency stop:** Immediately halt all motion
+- **Debug view:** Live JSON payload display
+
+## Quick Start
 
 ```bash
 npm install
@@ -17,11 +40,11 @@ npx expo start
 - **Joint sliders:** Base, Arm A, Arm B, Wrist A, Wrist B, Gripper; re-order tiles; inline angle badge.
 - **Safety gates:** Per-joint min/max/home values; outgoing payloads are clamped before sending.
 - **Homing:** One-tap home to your configured angles.
-- **Programs:** Create named programs, set one as “editing”, snapshot poses from Control, edit segment timings, and view the full JSON.
+- **Programs:** Create named programs, set one as "editing", snapshot poses from Control, edit segment timings, and view the full JSON.
 - **Gyro control (opt-in):** Use pitch/roll as two virtual sliders; calibrate to the current pose; tunable sensitivity.
-- **Debug:** Always-visible JSON payload of what’s being sent.
+- **Debug:** Always-visible JSON payload of what's being sent.
 
-## Example payload & rate
+## Example Payload
 
 ```json
 {
@@ -58,4 +81,14 @@ npx expo start
 
 ## Testing
 
-- `npm run lint`
+```bash
+npm run lint
+```
+
+## Important: Home Position
+
+**Always power on the arm with joints at their home positions.** Hobby servos don't provide position feedback, so the system assumes the arm starts at home. The app will remember your last commanded positions, but these are only valid if the arm hasn't been moved manually.
+
+## License
+
+MIT
