@@ -1,11 +1,11 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   GestureResponderEvent,
   LayoutChangeEvent,
   PanResponder,
   StyleSheet,
   View,
-} from 'react-native';
+} from "react-native";
 
 type Props = {
   value: number;
@@ -15,9 +15,16 @@ type Props = {
   onChange: (next: number) => void;
 };
 
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
 
-export function ControlSlider({ value, min, max, onChange, accent = '#1c9c9c' }: Props) {
+export function ControlSlider({
+  value,
+  min,
+  max,
+  onChange,
+  accent = "#1c9c9c",
+}: Props) {
   const trackRef = useRef<View | null>(null);
   const [trackMetrics, setTrackMetrics] = useState({ width: 1, left: 0 });
 
@@ -33,7 +40,11 @@ export function ControlSlider({ value, min, max, onChange, accent = '#1c9c9c' }:
 
   const handleGesture = useCallback(
     (event: GestureResponderEvent) => {
-      const x = clamp(event.nativeEvent.pageX - trackMetrics.left, 0, trackMetrics.width);
+      const x = clamp(
+        event.nativeEvent.pageX - trackMetrics.left,
+        0,
+        trackMetrics.width
+      );
       const ratio = trackMetrics.width === 0 ? 0 : x / trackMetrics.width;
       const next = min + ratio * (max - min);
       onChange(Number(next.toFixed(1)));
@@ -63,11 +74,18 @@ export function ControlSlider({ value, min, max, onChange, accent = '#1c9c9c' }:
         ref={(node) => (trackRef.current = node)}
         style={styles.trackWrapper}
         onLayout={handleLayout}
-        {...panResponder.panHandlers}>
-        <View pointerEvents="none" style={[styles.track, { backgroundColor: '#1f2933' }]} />
+        {...panResponder.panHandlers}
+      >
         <View
           pointerEvents="none"
-          style={[styles.fill, { width: `${percent * 100}%`, backgroundColor: accent }]}
+          style={[styles.track, { backgroundColor: "#1f2933" }]}
+        />
+        <View
+          pointerEvents="none"
+          style={[
+            styles.fill,
+            { width: `${percent * 100}%`, backgroundColor: accent },
+          ]}
         />
         <View
           pointerEvents="none"
@@ -86,36 +104,36 @@ export function ControlSlider({ value, min, max, onChange, accent = '#1c9c9c' }:
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 6,
+    paddingVertical: 12,
     flex: 1,
-    width: '100%',
+    width: "100%",
   },
   trackWrapper: {
-    height: 40,
-    justifyContent: 'center',
-    width: '100%',
+    height: 56,
+    justifyContent: "center",
+    width: "100%",
   },
   track: {
-    position: 'absolute',
+    position: "absolute",
     height: 12,
     borderRadius: 999,
-    width: '100%',
+    width: "100%",
     opacity: 0.25,
   },
   fill: {
-    position: 'absolute',
+    position: "absolute",
     height: 12,
     borderRadius: 999,
   },
   thumb: {
-    position: 'absolute',
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    position: "absolute",
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 2,
-    borderColor: '#0b1119',
-    transform: [{ translateX: -13 }],
-    shadowColor: '#000',
+    borderColor: "#0b1119",
+    transform: [{ translateX: -16 }],
+    shadowColor: "#000",
     shadowOpacity: 0.15,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,

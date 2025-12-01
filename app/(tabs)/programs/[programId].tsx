@@ -55,6 +55,9 @@ export default function ProgramDetailScreen() {
   const [name, setName] = useState(program?.name ?? "");
   const [durationInputs, setDurationInputs] = useState<string[]>([]);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [globalTime, setGlobalTime] = useState<string>(
+    String(DEFAULT_WAYPOINT_GAP_MS)
+  );
   const programJson = useMemo(
     () => (program ? JSON.stringify(program, null, 2) : ""),
     [program]
@@ -122,6 +125,16 @@ export default function ProgramDetailScreen() {
     });
     await updateDurations(program.id, numeric);
     Alert.alert("Durations saved", "Segment times updated for this program.");
+  };
+
+  const handleApplyGlobalTime = () => {
+    const timeValue = Number(globalTime);
+    if (!Number.isFinite(timeValue) || timeValue < 0) {
+      Alert.alert("Invalid time", "Please enter a valid positive number.");
+      return;
+    }
+    const newDurations = program.waypoints.slice(1).map(() => globalTime);
+    setDurationInputs(newDurations);
   };
 
   const handlePlay = () => {
@@ -259,105 +272,142 @@ export default function ProgramDetailScreen() {
           <Text style={styles.cardTitle}>Waypoints</Text>
           {program.waypoints.length === 0 ? (
             <Text style={styles.hint}>
-              No waypoints yet. Choose “Set as editing” then snapshot poses from
+              No waypoints yet. Choose "Set as editing" then snapshot poses from
               the Control tab to populate this program.
             </Text>
           ) : (
-            program.waypoints.map((waypoint, index) => (
-              <View key={waypoint.id} style={styles.waypointGroup}>
-                <View style={styles.waypointHeader}>
-                  <Text style={styles.value}>
-                    Waypoint {index + 1} • {waypoint.t} ms
-                  </Text>
-                  <View style={styles.waypointActions}>
-                    <Pressable
-                      onPress={() => goToPose(waypoint.joints)}
-                      style={[styles.chipButton, styles.chipGo]}
-                    >
-                      <Text style={[styles.chipText, styles.chipGoText]}>
-                        Go to pose
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() =>
-                        moveWaypoint(program.id, waypoint.id, "up")
-                      }
-                      disabled={index === 0}
-                      style={[
-                        styles.chipButton,
-                        styles.chipButtonNeutral,
-                        index === 0 && styles.chipDisabled,
-                      ]}
-                    >
-                      <Text style={styles.chipText}>Move up</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() =>
-                        moveWaypoint(program.id, waypoint.id, "down")
-                      }
-                      disabled={index === program.waypoints.length - 1}
-                      style={[
-                        styles.chipButton,
-                        styles.chipButtonNeutral,
-                        index === program.waypoints.length - 1 &&
-                          styles.chipDisabled,
-                      ]}
-                    >
-                      <Text style={styles.chipText}>Move down</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => duplicateWaypoint(program.id, waypoint.id)}
-                      style={[styles.chipButton, styles.chipButtonNeutral]}
-                    >
-                      <Text style={styles.chipText}>Duplicate</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => deleteWaypoint(program.id, waypoint.id)}
-                      style={[
-                        styles.chipButton,
-                        { borderColor: palette.danger },
-                      ]}
-                    >
-                      <Text
-                        style={[styles.chipText, { color: palette.danger }]}
-                      >
-                        Delete
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-                <View style={styles.jointGrid}>
-                  {Object.entries(waypoint.joints).map(([joint, angle]) => (
-                    <View key={joint} style={styles.jointPill}>
-                      <Text style={styles.jointLabel}>{joint}</Text>
-                      <Text style={styles.jointValue}>
-                        {Number(angle).toFixed(1)}°
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-
-                {index < program.waypoints.length - 1 && (
-                  <View style={styles.durationRow}>
-                    <Text style={styles.label}>Time to next (ms)</Text>
+            <>
+              {program.waypoints.length > 1 && (
+                <View style={styles.globalTimeRow}>
+                  <Text style={styles.label}>Set all durations (ms)</Text>
+                  <View style={styles.globalTimeInputRow}>
                     <TextInput
-                      value={
-                        durationInputs[index] ?? String(DEFAULT_WAYPOINT_GAP_MS)
-                      }
+                      value={globalTime}
                       onChangeText={(txt) =>
-                        setDurationInputs((current) => {
-                          const next = [...current];
-                          next[index] = txt.replace(/[^0-9.]/g, "");
-                          return next;
-                        })
+                        setGlobalTime(txt.replace(/[^0-9.]/g, ""))
                       }
                       keyboardType="numeric"
-                      style={styles.input}
+                      placeholder={String(DEFAULT_WAYPOINT_GAP_MS)}
+                      placeholderTextColor={palette.muted}
+                      style={[styles.input, styles.globalTimeInput]}
                     />
+                    <Pressable
+                      style={[
+                        styles.button,
+                        { backgroundColor: palette.accent2 },
+                      ]}
+                      onPress={handleApplyGlobalTime}
+                    >
+                      <Text style={[styles.buttonText, { color: "#041015" }]}>
+                        Apply to all
+                      </Text>
+                    </Pressable>
                   </View>
-                )}
-              </View>
-            ))
+                  <Text style={styles.hint}>
+                    Set a time and tap "Apply to all" to update all segment
+                    durations, then save.
+                  </Text>
+                </View>
+              )}
+              {program.waypoints.map((waypoint, index) => (
+                <View key={waypoint.id} style={styles.waypointGroup}>
+                  <View style={styles.waypointHeader}>
+                    <Text style={styles.value}>
+                      Waypoint {index + 1} • {waypoint.t} ms
+                    </Text>
+                    <View style={styles.waypointActions}>
+                      <Pressable
+                        onPress={() => goToPose(waypoint.joints)}
+                        style={[styles.chipButton, styles.chipGo]}
+                      >
+                        <Text style={[styles.chipText, styles.chipGoText]}>
+                          Go to pose
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() =>
+                          moveWaypoint(program.id, waypoint.id, "up")
+                        }
+                        disabled={index === 0}
+                        style={[
+                          styles.chipButton,
+                          styles.chipButtonNeutral,
+                          index === 0 && styles.chipDisabled,
+                        ]}
+                      >
+                        <Text style={styles.chipText}>Move up</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() =>
+                          moveWaypoint(program.id, waypoint.id, "down")
+                        }
+                        disabled={index === program.waypoints.length - 1}
+                        style={[
+                          styles.chipButton,
+                          styles.chipButtonNeutral,
+                          index === program.waypoints.length - 1 &&
+                            styles.chipDisabled,
+                        ]}
+                      >
+                        <Text style={styles.chipText}>Move down</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() =>
+                          duplicateWaypoint(program.id, waypoint.id)
+                        }
+                        style={[styles.chipButton, styles.chipButtonNeutral]}
+                      >
+                        <Text style={styles.chipText}>Duplicate</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => deleteWaypoint(program.id, waypoint.id)}
+                        style={[
+                          styles.chipButton,
+                          { borderColor: palette.danger },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.chipText, { color: palette.danger }]}
+                        >
+                          Delete
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                  <View style={styles.jointGrid}>
+                    {Object.entries(waypoint.joints).map(([joint, angle]) => (
+                      <View key={joint} style={styles.jointPill}>
+                        <Text style={styles.jointLabel}>{joint}</Text>
+                        <Text style={styles.jointValue}>
+                          {Number(angle).toFixed(1)}°
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  {index < program.waypoints.length - 1 && (
+                    <View style={styles.durationRow}>
+                      <Text style={styles.label}>Time to next (ms)</Text>
+                      <TextInput
+                        value={
+                          durationInputs[index] ??
+                          String(DEFAULT_WAYPOINT_GAP_MS)
+                        }
+                        onChangeText={(txt) =>
+                          setDurationInputs((current) => {
+                            const next = [...current];
+                            next[index] = txt.replace(/[^0-9.]/g, "");
+                            return next;
+                          })
+                        }
+                        keyboardType="numeric"
+                        style={styles.input}
+                      />
+                    </View>
+                  )}
+                </View>
+              ))}
+            </>
           )}
           {program.waypoints.length > 1 && (
             <Pressable
@@ -495,6 +545,23 @@ const styles = StyleSheet.create({
   },
   durationRow: {
     gap: 6,
+  },
+  globalTimeRow: {
+    backgroundColor: palette.elevated,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: palette.accent2,
+    gap: 8,
+    marginBottom: 4,
+  },
+  globalTimeInputRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  globalTimeInput: {
+    flex: 1,
   },
   chipButton: {
     paddingHorizontal: 10,
