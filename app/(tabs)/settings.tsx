@@ -9,7 +9,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ControlSlider } from "@/components/control-slider";
 import {
   JOINT_OPTIONS,
   JointId,
@@ -27,29 +26,6 @@ const palette = {
   muted: "#7ea0b8",
   danger: "#ff5c8a",
 };
-
-function getSmoothingLabel(factor: number): string {
-  if (factor >= 0.4) return "Very Snappy";
-  if (factor >= 0.25) return "Responsive";
-  if (factor >= 0.12) return "Balanced";
-  if (factor >= 0.06) return "Smooth";
-  return "Cinematic";
-}
-
-// Convert smoothing factor (0.03-0.5) to slider value (0-100)
-// Lower factor = smoother = higher slider value
-function factorToSlider(factor: number): number {
-  // factor 0.5 -> slider 0, factor 0.03 -> slider 100
-  const normalized = (0.5 - factor) / (0.5 - 0.03);
-  return Math.round(normalized * 100);
-}
-
-// Convert slider value (0-100) to smoothing factor (0.03-0.5)
-function sliderToFactor(slider: number): number {
-  // slider 0 -> factor 0.5, slider 100 -> factor 0.03
-  const factor = 0.5 - (slider / 100) * (0.5 - 0.03);
-  return Math.max(0.03, Math.min(0.5, factor));
-}
 
 function Section({
   title,
@@ -136,65 +112,6 @@ export default function SettingsScreen() {
             <Text style={styles.buttonText}>Send home now</Text>
           </Pressable>
         </View>
-      </Section>
-
-      <Section title="Motion smoothing">
-        <Text style={styles.hint}>
-          Smooth slider movements for fluid motion. When enabled, the arm
-          gradually accelerates to target positions instead of jumping
-          instantly.
-        </Text>
-        <View style={styles.row}>
-          <Pressable
-            style={[
-              styles.button,
-              {
-                backgroundColor: settings.smoothingEnabled
-                  ? palette.accent
-                  : palette.elevated,
-                borderColor: palette.border,
-                borderWidth: 1,
-              },
-            ]}
-            onPress={() =>
-              updateSettings({ smoothingEnabled: !settings.smoothingEnabled })
-            }
-          >
-            <Text
-              style={[
-                styles.buttonText,
-                { color: settings.smoothingEnabled ? "#041015" : palette.text },
-              ]}
-            >
-              {settings.smoothingEnabled ? "Smoothing ON" : "Smoothing OFF"}
-            </Text>
-          </Pressable>
-        </View>
-        {settings.smoothingEnabled && (
-          <>
-            <Text style={styles.label}>Smoothness</Text>
-            <View style={styles.smoothingSliderRow}>
-              <Text style={[styles.hint, { width: 60 }]}>Snappy</Text>
-              <View style={{ flex: 1 }}>
-                <ControlSlider
-                  value={factorToSlider(settings.smoothingFactor)}
-                  min={0}
-                  max={100}
-                  accent={palette.accent}
-                  onChange={(val) => {
-                    updateSettings({ smoothingFactor: sliderToFactor(val) });
-                  }}
-                />
-              </View>
-              <Text style={[styles.hint, { width: 60, textAlign: "right" }]}>
-                Smooth
-              </Text>
-            </View>
-            <Text style={styles.hint}>
-              Current: {getSmoothingLabel(settings.smoothingFactor)}
-            </Text>
-          </>
-        )}
       </Section>
 
       <Section title="Joint limits & home">
@@ -402,11 +319,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     flexWrap: "wrap",
-  },
-  smoothingSliderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
   },
   inputGroup: {
     flex: 1,

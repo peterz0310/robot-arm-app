@@ -55,8 +55,6 @@ type RobotSettings = {
   gyroScale: number;
   gyroPitchJoint?: JointId;
   gyroRollJoint?: JointId;
-  smoothingEnabled: boolean;
-  smoothingFactor: number; // 0.03 (very smooth) to 1.0 (instant)
 };
 
 type GyroCalibration = {
@@ -163,8 +161,6 @@ export function RobotControllerProvider({
     gyroScale: 70,
     gyroPitchJoint: "armA",
     gyroRollJoint: "base",
-    smoothingEnabled: true,
-    smoothingFactor: 0.15, // Balanced default
   });
   const [lastPayload, setLastPayload] = useState<string>("");
   const [gyroCalibration, setGyroCalibration] = useState<GyroCalibration>({
@@ -193,13 +189,6 @@ export function RobotControllerProvider({
   const lastSendRef = useRef<number>(0);
   const homeAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Smoothing state: desiredAngles are targets from user input, smoothedAngles are interpolated values sent to ESP32
-  const desiredAnglesRef = useRef<JointAngles>({ ...defaultAngles });
-  const smoothedAnglesRef = useRef<JointAngles>({ ...defaultAngles });
-  const smoothingLoopRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const settingsRef = useRef(settings); // Keep a ref to settings for use in smoothing loop
-  settingsRef.current = settings;
-
   const homeAll = useCallback(() => {
     // Clear any existing animation
     if (homeAnimationRef.current) {
@@ -213,9 +202,6 @@ export function RobotControllerProvider({
     JOINTS.forEach((joint) => {
       targetAngles[joint] = jointConfigs[joint].home;
     });
-
-    // Set desired angles immediately so smoothing loop knows the target
-    desiredAnglesRef.current = targetAngles;
 
     const duration = 1000; // 1 second
     const startTime = Date.now();
@@ -236,9 +222,9 @@ export function RobotControllerProvider({
         next[joint] = Number((start + (end - start) * eased).toFixed(1));
       });
 
-      // Update both state and smoothed ref (bypass smoothing loop during home animation)
+      // Update state and send to ESP32
       setJointAngles(next);
-      smoothedAnglesRef.current = next;
+      sendPayload(next);
 
       if (progress >= 1) {
         if (homeAnimationRef.current) {
@@ -290,18 +276,14 @@ export function RobotControllerProvider({
       const limited = clamp(angle, config.min, config.max);
       const rounded = Number(limited.toFixed(1));
 
-      // Update desired angles ref for smoothing
-      desiredAnglesRef.current = {
-        ...desiredAnglesRef.current,
-        [joint]: rounded,
-      };
-
-      // Update state for UI display
+      // Update state and send directly to ESP32
       setJointAngles((current) => {
-        return { ...current, [joint]: rounded };
+        const next = { ...current, [joint]: rounded };
+        sendPayload(next);
+        return next;
       });
     },
-    [jointConfigs]
+    [jointConfigs, sendPayload]
   );
 
   const goToPose = useCallback(
@@ -312,20 +294,18 @@ export function RobotControllerProvider({
         const numeric = Number(target);
         const config = jointConfigs[joint];
         const clamped = clamp(
-          Number.isFinite(numeric) ? numeric : desiredAnglesRef.current[joint],
+          Number.isFinite(numeric) ? numeric : jointAngles[joint],
           config.min,
           config.max
         );
         next[joint] = Number(clamped.toFixed(1));
       });
 
-      // Update desired angles ref for smoothing
-      desiredAnglesRef.current = next;
-
-      // Update state for UI display
+      // Update state and send directly to ESP32
       setJointAngles(next);
+      sendPayload(next);
     },
-    [jointConfigs]
+    [jointConfigs, jointAngles, sendPayload]
   );
 
   const reorderTile = useCallback(
@@ -372,7 +352,7 @@ export function RobotControllerProvider({
         return; // Block all motion commands when emergency stopped
       }
       const now = Date.now();
-      if (now - lastSendRef.current < 100) {
+      if (now - lastSendRef.current < 50) {
         return;
       }
       lastSendRef.current = now;
@@ -430,17 +410,11 @@ export function RobotControllerProvider({
     updateSettings({ gyroEnabled: false });
     setIsEmergencyStopped(true);
     isEmergencyStoppedRef.current = true;
-    // Sync refs to current position to prevent movement on resume
-    desiredAnglesRef.current = { ...jointAngles };
-    smoothedAnglesRef.current = { ...jointAngles };
-  }, [connectionStatus, updateSettings, jointAngles]);
+  }, [connectionStatus, updateSettings]);
 
   const resumeAfterStop = useCallback(() => {
     setIsEmergencyStopped(false);
     isEmergencyStoppedRef.current = false;
-    // Sync refs to current UI state
-    desiredAnglesRef.current = { ...jointAngles };
-    smoothedAnglesRef.current = { ...jointAngles };
     // Send current angles to resume from current position
     if (socketRef.current && connectionStatus === "connected") {
       try {
@@ -478,79 +452,14 @@ export function RobotControllerProvider({
         gyroScale: 70,
         gyroPitchJoint: "armA",
         gyroRollJoint: "base",
-        smoothingEnabled: true,
-        smoothingFactor: 0.15,
       });
       setJointAngles(defaultAngles);
-      // Reset smoothing refs
-      desiredAnglesRef.current = { ...defaultAngles };
-      smoothedAnglesRef.current = { ...defaultAngles };
     } catch (error) {
       console.log("[RobotController] Clear settings error:", error);
     }
   }, []);
 
-  // Smoothing loop: interpolates smoothedAngles toward desiredAngles and sends to ESP32
-  useEffect(() => {
-    const SMOOTHING_INTERVAL_MS = 33; // ~30 FPS
-    const DEADZONE = 0.3; // Only send if angle changed by more than this
-
-    smoothingLoopRef.current = setInterval(() => {
-      if (isEmergencyStoppedRef.current) return;
-
-      const { smoothingEnabled, smoothingFactor } = settingsRef.current;
-      const desired = desiredAnglesRef.current;
-      const smoothed = smoothedAnglesRef.current;
-
-      let hasChanges = false;
-      const next: JointAngles = { ...smoothed };
-
-      JOINTS.forEach((joint) => {
-        const target = desired[joint];
-        const current = smoothed[joint];
-        const diff = target - current;
-
-        if (Math.abs(diff) < 0.01) {
-          // Close enough, snap to target
-          next[joint] = target;
-        } else if (smoothingEnabled && smoothingFactor < 1) {
-          // Exponential smoothing (EMA)
-          next[joint] = Number((current + diff * smoothingFactor).toFixed(1));
-          hasChanges = true;
-        } else {
-          // No smoothing, go directly to target
-          next[joint] = target;
-          hasChanges = true;
-        }
-      });
-
-      // Check if any angle changed enough to send
-      const shouldSend =
-        JOINTS.some(
-          (joint) => Math.abs(next[joint] - smoothed[joint]) > DEADZONE
-        ) ||
-        JOINTS.some(
-          (joint) =>
-            Math.abs(next[joint] - desired[joint]) > 0.01 && !hasChanges
-        );
-
-      smoothedAnglesRef.current = next;
-
-      // Always send if we have meaningful changes
-      if (
-        JOINTS.some((joint) => Math.abs(next[joint] - smoothed[joint]) > 0.01)
-      ) {
-        sendPayload(next);
-      }
-    }, SMOOTHING_INTERVAL_MS);
-
-    return () => {
-      if (smoothingLoopRef.current) {
-        clearInterval(smoothingLoopRef.current);
-        smoothingLoopRef.current = null;
-      }
-    };
-  }, [sendPayload]);
+  // No app-side smoothing - ESP32 handles smooth motion with its slew rate limiting
 
   useEffect(() => {
     if (!STORAGE_FILE) return;
