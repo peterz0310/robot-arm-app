@@ -245,6 +245,38 @@ export function RobotControllerProvider({
     };
   }, []);
 
+  const sendPayload = useCallback(
+    (angles: JointAngles) => {
+      if (isEmergencyStoppedRef.current) {
+        return; // Block all motion commands when emergency stopped
+      }
+      const now = Date.now();
+      if (now - lastSendRef.current < 50) {
+        return;
+      }
+      lastSendRef.current = now;
+      const payload = JSON.stringify({
+        base: angles.base,
+        armA: angles.armA,
+        armB: angles.armB,
+        wristA: angles.wristA,
+        wristB: angles.wristB,
+        gripper: angles.gripper,
+        timestamp: now,
+      });
+      setLastPayload(payload);
+
+      if (socketRef.current && connectionStatus === "connected") {
+        try {
+          socketRef.current.send(payload);
+        } catch (error) {
+          setConnectionStatus("error");
+        }
+      }
+    },
+    [connectionStatus]
+  );
+
   const setJointConfig = useCallback(
     (joint: JointId, config: Partial<JointConfig>) => {
       setJointConfigs((current) => {
@@ -346,56 +378,34 @@ export function RobotControllerProvider({
     setGyroCalibration(lastMotion.current);
   }, []);
 
-  const sendPayload = useCallback(
-    (angles: JointAngles) => {
-      if (isEmergencyStoppedRef.current) {
-        return; // Block all motion commands when emergency stopped
-      }
-      const now = Date.now();
-      if (now - lastSendRef.current < 50) {
-        return;
-      }
-      lastSendRef.current = now;
-      const payload = JSON.stringify({
-        base: angles.base,
-        armA: angles.armA,
-        armB: angles.armB,
-        wristA: angles.wristA,
-        wristB: angles.wristB,
-        gripper: angles.gripper,
-        timestamp: now,
-      });
-      setLastPayload(payload);
-
-      if (socketRef.current && connectionStatus === "connected") {
-        try {
-          socketRef.current.send(payload);
-        } catch (error) {
-          setConnectionStatus("error");
-        }
-      }
-    },
-    [connectionStatus]
-  );
-
   const sendProgramRun = useCallback(
     (program: ProgramRunPayload) => {
       if (!socketRef.current || connectionStatus !== "connected") return false;
-      try {
-        socketRef.current.send(
-          JSON.stringify({
-            type: "program",
-            program,
-            requestedAt: Date.now(),
-          })
+
+      // Disable gyro to prevent interrupting the program
+      if (settings.gyroEnabled) {
+        console.log(
+          "[sendProgramRun] Disabling gyro to prevent program interruption"
         );
+        updateSettings({ gyroEnabled: false });
+      }
+
+      try {
+        const payload = {
+          type: "program",
+          program,
+          requestedAt: Date.now(),
+        };
+        const payloadStr = JSON.stringify(payload);
+        console.log("[sendProgramRun] Sending program:", payloadStr);
+        socketRef.current.send(payloadStr);
         return true;
       } catch {
         setConnectionStatus("error");
         return false;
       }
     },
-    [connectionStatus]
+    [connectionStatus, settings.gyroEnabled, updateSettings]
   );
 
   const emergencyStop = useCallback(() => {
