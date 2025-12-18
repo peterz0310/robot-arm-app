@@ -69,6 +69,7 @@ export default function ControlScreen() {
     emergencyStop,
     resumeAfterStop,
     isEmergencyStopped,
+    calibrateGyro,
   } = useRobotController();
   const [snapshotMessage, setSnapshotMessage] = useState<string | null>(null);
 
@@ -158,6 +159,21 @@ export default function ControlScreen() {
               {settings.gyroEnabled ? "Disable gyro" : "Enable gyro"}
             </Text>
           </Pressable>
+          {settings.gyroEnabled && (
+            <Pressable
+              style={[
+                styles.actionButton,
+                {
+                  borderColor: palette.accent,
+                  borderWidth: 1,
+                  backgroundColor: palette.elevated,
+                },
+              ]}
+              onPress={calibrateGyro}
+            >
+              <Text style={styles.actionText}>Calibrate</Text>
+            </Pressable>
+          )}
           {isEmergencyStopped ? (
             <Pressable
               style={[

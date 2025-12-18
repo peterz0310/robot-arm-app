@@ -50,7 +50,6 @@ type ConnectionStatus =
 
 type RobotSettings = {
   wsAddress: string;
-  debug: boolean;
   gyroEnabled: boolean;
   gyroScale: number;
   gyroPitchJoint?: JointId;
@@ -156,7 +155,6 @@ export function RobotControllerProvider({
     useState<ConnectionStatus>("disconnected");
   const [settings, setSettings] = useState<RobotSettings>({
     wsAddress: "",
-    debug: false,
     gyroEnabled: false,
     gyroScale: 70,
     gyroPitchJoint: "armA",
@@ -178,16 +176,27 @@ export function RobotControllerProvider({
     pitch: 0,
     roll: 0,
   });
-  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestSnapshot = useRef<{
     jointConfigs: typeof jointConfigs;
     controlTiles: typeof controlTiles;
     settings: typeof settings;
+    sendPayload: (angles: JointAngles) => void;
   } | null>(null);
+
+  useEffect(() => {
+    latestSnapshot.current = {
+      jointConfigs,
+      controlTiles,
+      settings,
+      sendPayload: sendPayloadRef.current,
+    };
+  }, [jointConfigs, controlTiles, settings]);
 
   const socketRef = useRef<WebSocket | null>(null);
   const lastSendRef = useRef<number>(0);
   const homeAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sendPayloadRef = useRef<(angles: JointAngles) => void>(() => {});
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const homeAll = useCallback(() => {
     // Clear any existing animation
@@ -276,6 +285,10 @@ export function RobotControllerProvider({
     },
     [connectionStatus]
   );
+
+  useEffect(() => {
+    sendPayloadRef.current = sendPayload;
+  }, [sendPayload]);
 
   const setJointConfig = useCallback(
     (joint: JointId, config: Partial<JointConfig>) => {
@@ -384,9 +397,6 @@ export function RobotControllerProvider({
 
       // Disable gyro to prevent interrupting the program
       if (settings.gyroEnabled) {
-        console.log(
-          "[sendProgramRun] Disabling gyro to prevent program interruption"
-        );
         updateSettings({ gyroEnabled: false });
       }
 
@@ -397,7 +407,6 @@ export function RobotControllerProvider({
           requestedAt: Date.now(),
         };
         const payloadStr = JSON.stringify(payload);
-        console.log("[sendProgramRun] Sending program:", payloadStr);
         socketRef.current.send(payloadStr);
         return true;
       } catch {
@@ -450,14 +459,12 @@ export function RobotControllerProvider({
       const info = await FileSystem.getInfoAsync(STORAGE_FILE);
       if (info.exists) {
         await FileSystem.deleteAsync(STORAGE_FILE);
-        console.log("[RobotController] Saved settings cleared");
       }
       // Reset to defaults
       setJointConfigs(defaultConfigs);
       setControlTiles(defaultTiles);
       setSettings({
         wsAddress: "",
-        debug: false,
         gyroEnabled: false,
         gyroScale: 70,
         gyroPitchJoint: "armA",
@@ -465,7 +472,7 @@ export function RobotControllerProvider({
       });
       setJointAngles(defaultAngles);
     } catch (error) {
-      console.log("[RobotController] Clear settings error:", error);
+      // Silently handle errors
     }
   }, []);
 
@@ -476,20 +483,17 @@ export function RobotControllerProvider({
     let cancelled = false;
     (async () => {
       try {
-        console.log("[RobotController] Loading from:", STORAGE_FILE);
         const info = await FileSystem.getInfoAsync(STORAGE_FILE);
-        console.log("[RobotController] File exists:", info.exists);
         if (!info.exists) return;
         const raw = await FileSystem.readAsStringAsync(STORAGE_FILE);
         const parsed = JSON.parse(raw);
-        console.log("[RobotController] Loaded data:", Object.keys(parsed));
         if (parsed.jointConfigs)
           setJointConfigs((prev) => ({ ...prev, ...parsed.jointConfigs }));
         if (parsed.controlTiles) setControlTiles(parsed.controlTiles);
         if (parsed.settings)
           setSettings((prev) => ({ ...prev, ...parsed.settings }));
       } catch (error) {
-        console.log("[RobotController] Load error:", error);
+        // Silently handle load errors
       }
       if (!cancelled) {
         // keep current state
@@ -507,29 +511,24 @@ export function RobotControllerProvider({
       settings: typeof settings;
     }) => {
       if (!STORAGE_FILE) return;
-      latestSnapshot.current = data;
       if (persistTimer.current) clearTimeout(persistTimer.current);
       persistTimer.current = setTimeout(async () => {
         persistTimer.current = null;
-        const snapshot = latestSnapshot.current;
-        if (!snapshot) return;
         try {
-          console.log("[RobotController] Saving to:", STORAGE_FILE);
           await FileSystem.writeAsStringAsync(
             STORAGE_FILE,
             JSON.stringify(
               {
-                jointConfigs: snapshot.jointConfigs,
-                controlTiles: snapshot.controlTiles,
-                settings: snapshot.settings,
+                jointConfigs: data.jointConfigs,
+                controlTiles: data.controlTiles,
+                settings: data.settings,
               },
               null,
               2
             )
           );
-          console.log("[RobotController] Save successful");
         } catch (error) {
-          console.log("[RobotController] Save error:", error);
+          // Silently handle save errors
         }
       }, 150);
     },
@@ -598,9 +597,6 @@ export function RobotControllerProvider({
           setReconnectAttempts((prev) => {
             const nextAttempt = prev + 1;
             const delay = getReconnectDelay(prev);
-            console.log(
-              `[WebSocket] Reconnecting in ${delay}ms (attempt ${nextAttempt})`
-            );
 
             // Clear any existing reconnect timeout
             if (reconnectTimeoutRef.current) {
@@ -676,6 +672,11 @@ export function RobotControllerProvider({
 
     DeviceMotion.setUpdateInterval(120);
     const subscription = DeviceMotion.addListener((motion) => {
+      const snapshot = latestSnapshot.current;
+      if (!snapshot) {
+        return;
+      }
+
       const pitch = motion.rotation?.beta ?? 0; // forward/back
       const roll = motion.rotation?.gamma ?? 0; // side/side
       lastMotion.current = { pitch, roll };
@@ -689,34 +690,72 @@ export function RobotControllerProvider({
         fallback: JointId | undefined
       ) => {
         const target = joint ?? fallback;
-        if (!target) return;
-        const cfg = jointConfigs[target];
-        const span = Math.min(cfg.max - cfg.home, cfg.home - cfg.min);
-        const normalized = clamp(raw / 90, -1, 1);
-        const nextAngle = clamp(
-          cfg.home + normalized * span * (settings.gyroScale / 90),
-          cfg.min,
-          cfg.max
-        );
-        updateJoint(target, nextAngle);
+        if (!target) return null;
+        const cfg = snapshot.jointConfigs[target];
+
+        // When calibrated (phone flat on table = home position),
+        // tilting in either direction should move the joint
+        const range = cfg.max - cfg.min;
+        const normalized = clamp(raw / 90, -1, 1); // -1 to +1 based on tilt
+        const scaledOffset =
+          normalized * range * 0.5 * (snapshot.settings.gyroScale / 100);
+        const nextAngle = clamp(cfg.home + scaledOffset, cfg.min, cfg.max);
+        return { joint: target, angle: nextAngle };
       };
 
-      applyGyro(degreesPitch, settings.gyroPitchJoint, "armA");
-      applyGyro(degreesRoll, settings.gyroRollJoint, "base");
+      // Collect both gyro joint updates
+      const pitchUpdate = applyGyro(
+        degreesPitch,
+        snapshot.settings.gyroPitchJoint,
+        "armA"
+      );
+      const rollUpdate = applyGyro(
+        degreesRoll,
+        snapshot.settings.gyroRollJoint,
+        "base"
+      );
+
+      // Apply both updates to state and send as a single payload
+      setJointAngles((current) => {
+        const next = { ...current };
+        let changed = false;
+
+        if (pitchUpdate) {
+          const limited = clamp(
+            pitchUpdate.angle,
+            snapshot.jointConfigs[pitchUpdate.joint].min,
+            snapshot.jointConfigs[pitchUpdate.joint].max
+          );
+          const rounded = Number(limited.toFixed(1));
+          if (rounded !== current[pitchUpdate.joint]) {
+            next[pitchUpdate.joint] = rounded;
+            changed = true;
+          }
+        }
+        if (rollUpdate) {
+          const limited = clamp(
+            rollUpdate.angle,
+            snapshot.jointConfigs[rollUpdate.joint].min,
+            snapshot.jointConfigs[rollUpdate.joint].max
+          );
+          const rounded = Number(limited.toFixed(1));
+          if (rounded !== current[rollUpdate.joint]) {
+            next[rollUpdate.joint] = rounded;
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          snapshot.sendPayload(next);
+        }
+        return changed ? next : current;
+      });
     });
 
     return () => {
       subscription.remove();
     };
-  }, [
-    gyroCalibration,
-    jointConfigs,
-    settings.gyroEnabled,
-    settings.gyroPitchJoint,
-    settings.gyroRollJoint,
-    settings.gyroScale,
-    updateJoint,
-  ]);
+  }, [gyroCalibration, settings.gyroEnabled]);
 
   const value = useMemo<RobotControllerContextValue>(
     () => ({
